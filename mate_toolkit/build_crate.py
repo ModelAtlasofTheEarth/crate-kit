@@ -182,22 +182,19 @@ def _root_entity(doc):
     return next((e for e in doc.get("@graph", []) if e.get("@id") == "./"), {})
 
 
-def _is_derived_entity(e):
-    """Derived = regenerated from the filesystem/payload each build (so replace, don't preserve).
-    Authored/enriched entities (Person, SoftwareApplication, ScholarlyArticle, …) are preserved."""
-    if e.get("@id") == "./":
-        return False
-    if e.get("@type") == "File":
-        return True
-    # NB: ExternalPayload is preserved (authored, set once via front-matter/issue/CLI), not derived.
-    i = e.get("@id", "")
-    return isinstance(i, str) and i.endswith("/")          # a local directory Dataset
-
-
 def _merge(existing, fresh):
     """Preserve authored + enriched (from `existing`); refresh the derived layer (from `fresh`).
     This is what makes the crate the editable single source of truth: a rebuild never clobbers
-    a human-set or enriched value, only the file manifest / git provenance / payload."""
+    a human-set or enriched value, only the file manifest / git provenance / payload.
+
+    Entity handling:
+    - root ("./"): merge — refresh DERIVED_ROOT_FIELDS, preserve everything else authored.
+    - File: existence + content follow the fresh build (replaced).
+    - directory Dataset (@id ends "/"): existence follows the fresh build, but the EXISTING
+      entity is kept so an authored description (`mate describe`) / type survives rebuilds.
+    - everything else (Person, ScholarlyArticle, ExternalPayload, descriptor): preserved.
+    Existing files/dirs absent from the fresh build are dropped (they no longer exist on disk).
+    """
     eroot, froot = _root_entity(existing), _root_entity(fresh)
     root = dict(eroot)
     for k in DERIVED_ROOT_FIELDS:                          # refresh derived root fields
@@ -209,15 +206,35 @@ def _merge(existing, fresh):
         if k not in DERIVED_ROOT_FIELDS and k not in root:
             root[k] = v
 
+    existing_by_id = {e.get("@id"): e for e in existing.get("@graph", [])}
     graph, seen = [root], {"./"}
-    for e in fresh.get("@graph", []):                      # fresh derived entities win
-        if e.get("@id") not in seen and _is_derived_entity(e):
-            graph.append(e); seen.add(e.get("@id"))
-    for src in (existing, fresh):                          # preserved entities: existing first
+
+    # filesystem-tracked entities: existence follows `fresh`
+    for e in fresh.get("@graph", []):
+        i = e.get("@id")
+        if i in seen:
+            continue
+        if e.get("@type") == "File":
+            graph.append(e); seen.add(i)                   # files: take fresh
+        elif isinstance(i, str) and i.endswith("/"):
+            graph.append(existing_by_id.get(i, e)); seen.add(i)   # dir: keep authored desc
+
+    # non-filesystem entities: preserved (existing wins, fresh fills gaps)
+    for src in (existing, fresh):
         for e in src.get("@graph", []):
             i = e.get("@id")
-            if i not in seen and not _is_derived_entity(e):
-                graph.append(e); seen.add(i)
+            if i in seen or e.get("@type") == "File" or (isinstance(i, str) and i.endswith("/")):
+                continue
+            graph.append(e); seen.add(i)
+
+    # RO-Crate structural rule: every data entity must be linked from root.hasPart. hasPart is
+    # derived (refreshed from the filesystem), so re-link ALL data entities incl. external
+    # payloads here, or a rebuild orphans them (the bug ro-crate-py caught).
+    root["hasPart"] = [{"@id": e["@id"]} for e in graph
+                       if e.get("@id") != "./" and (
+                           e.get("@type") == "File"
+                           or e.get("additionalType") == "ExternalPayload"
+                           or (isinstance(e.get("@id"), str) and e.get("@id").endswith("/")))]
 
     out = dict(existing)
     out["@graph"] = graph

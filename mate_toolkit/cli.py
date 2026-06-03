@@ -42,6 +42,17 @@ def main(argv=None):
     e = sub.add_parser("enrich", help="resolve PIDs in the crate (ORCID, publication DOI); best-effort")
     e.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
 
+    d = sub.add_parser("describe", help="attach name/description/type to a directory's crate entity")
+    d.add_argument("target", help="directory to describe, e.g. model_results/")
+    d.add_argument("--repo", default=".", help="repository directory (default: .)")
+    d.add_argument("--name", help="human name for the dataset")
+    d.add_argument("--description", help="what it is / how it was made")
+    d.add_argument("--type", action="append", dest="types", help="extra schema.org @type (repeatable)")
+
+    mf = sub.add_parser("mode-file", help="generate a Crate-O mode file (web editor config) from the profile")
+    mf.add_argument("-o", "--out", required=True, help="output path for the mode file json")
+    mf.add_argument("--repo", default=None, help="use this repo's .mate/profile.yml (else builtin profile)")
+
     args = p.parse_args(argv)
 
     if args.cmd == "build":
@@ -77,6 +88,22 @@ def main(argv=None):
     if args.cmd == "enrich":
         from .enrich import enrich as enrich_repo
         print(json.dumps(enrich_repo(args.repo), indent=2), file=sys.stderr)
+        return 0
+
+    if args.cmd == "describe":
+        from .describe import describe as describe_target
+        result = describe_target(args.repo, args.target, name=args.name,
+                                 description=args.description, types=args.types)
+        print(json.dumps(result, indent=2), file=sys.stderr)
+        return 0
+
+    if args.cmd == "mode-file":
+        from .profile import load_profile
+        from .mode_file import write_mode
+        import os
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        out = write_mode(load_profile(args.repo), args.out)
+        print(f"wrote {out}", file=sys.stderr)
         return 0
 
     if args.cmd == "validate":

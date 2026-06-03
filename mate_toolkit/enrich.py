@@ -7,11 +7,16 @@ here (kept minimal for MVP).
 What to keep from each response is the profile's `enrich.<kind>.keep` list — config, not code.
 """
 import json
+import re
 import urllib.request
 from pathlib import Path
 
 from .build_crate import _root_entity
 from .profile import load_profile
+
+
+def _slug(s):
+    return re.sub(r"[^a-z0-9]+", "-", (s or "person").lower()).strip("-")
 
 
 def _get_json(url, accept="application/json"):
@@ -76,11 +81,19 @@ def _enrich_publication(doc, root, keep):
     if "url" in keep and m.get("URL"):
         ent["url"] = m["URL"]
     if "author" in keep and m.get("author"):
-        authors = [{"name": " ".join(x for x in (a.get("given"), a.get("family")) if x)}
-                   for a in m["author"]]
-        authors = [a for a in authors if a["name"]]
-        if authors:
-            ent["author"] = authors
+        refs = []
+        for a in m["author"]:
+            nm = " ".join(x for x in (a.get("given"), a.get("family")) if x)
+            if not nm:
+                continue
+            # give every author a real @id (ORCID if present, else a blank node) — anonymous
+            # inline objects don't round-trip safely through editors like Crate-O.
+            pid = a.get("ORCID") or ("#author-" + _slug(nm))
+            if not any(e.get("@id") == pid for e in doc["@graph"]):
+                doc["@graph"].append({"@id": pid, "@type": "Person", "name": nm})
+            refs.append({"@id": pid})
+        if refs:
+            ent["author"] = refs
     doc["@graph"].append(ent)
     return True
 

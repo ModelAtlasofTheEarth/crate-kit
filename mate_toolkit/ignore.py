@@ -22,6 +22,7 @@ import pathspec
 HARD_SKIP_DIRS = {".git"}
 HARD_SKIP_FILES = {
     ".DS_Store", "Thumbs.db", "ro-crate-metadata.json",
+    "ro-crate-preview.html",                                       # written by Crate-O on save
     ".gitkeep", ".gitignore", ".rocrateignore", ".gitattributes",  # placeholders / VCS infra
 }
 

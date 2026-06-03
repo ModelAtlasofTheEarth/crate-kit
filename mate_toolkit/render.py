@@ -61,11 +61,18 @@ def _authors(root, by_id):
         if not isinstance(c, dict):
             continue
         if c.get("name"):
-            out.append(c["name"])
+            out.append(scalar(c["name"]))
         elif c.get("@id"):
             ent = by_id.get(c["@id"]) or {}
-            out.append(ent.get("name") or c["@id"].rstrip("/").rsplit("/", 1)[-1])
+            out.append(scalar(ent.get("name")) or c["@id"].rstrip("/").rsplit("/", 1)[-1])
     return out
+
+
+def scalar(v):
+    """Crate-O wraps single values in lists; unwrap a 1-element list where we expect a scalar."""
+    if isinstance(v, list):
+        return v[0] if len(v) == 1 else v
+    return v
 
 
 def _sections(graph):
@@ -102,7 +109,7 @@ def build_qmd(doc, repo_name, images=None):
     root = by_id.get("./", {})
 
     fm = {
-        "title": root.get("name") or repo_name,
+        "title": scalar(root.get("name")) or repo_name,
         "format": {
             "gfm": {"output-file": "README.md"},
             "html": {"output-file": "index.html", "toc": True, "page-layout": "full",
@@ -120,25 +127,27 @@ def build_qmd(doc, repo_name, images=None):
 
     # Overview from the root entity
     lines.append("## Overview\n")
-    if root.get("description"):
-        lines.append(root["description"] + "\n")
+    desc = scalar(root.get("description"))
+    if desc:
+        lines.append(str(desc) + "\n")
 
     meta = []
     lic = root.get("license")
     if isinstance(lic, dict) and lic.get("@id"):
-        meta.append(f"- **License:** {lic['@id']}")
+        meta.append(f"- **License:** {scalar(lic['@id'])}")
     if root.get("version"):
-        meta.append(f"- **Version (git):** `{root['version']}`")
+        meta.append(f"- **Version (git):** `{scalar(root['version'])}`")
     if root.get("codeRepository"):
-        meta.append(f"- **Repository:** {root['codeRepository']}")
+        meta.append(f"- **Repository:** {scalar(root['codeRepository'])}")
     if root.get("dateModified"):
-        meta.append(f"- **Last modified:** {root['dateModified']}")
+        meta.append(f"- **Last modified:** {scalar(root['dateModified'])}")
     if meta:
         lines.append("\n".join(meta) + "\n")
 
-    if root.get("abstract") and root.get("abstract") != root.get("description"):
+    ab = scalar(root.get("abstract"))
+    if ab and ab != desc:
         lines.append("### Abstract\n")
-        lines.append(root["abstract"] + "\n")
+        lines.append(str(ab) + "\n")
 
     # Tier-1 dynamic tabs: Figures, one per top-level directory, plus external payloads
     sections = _sections(graph)
@@ -156,17 +165,17 @@ def build_qmd(doc, repo_name, images=None):
             lines.append(f"### {name}\n")
             lines.append(f"_{len(files)} file(s)_\n")
             for e in files:
-                size = _human_size(e.get("contentSize"))
+                size = _human_size(scalar(e.get("contentSize")))
                 lines.append(f"- `{e['@id']}` — {size}")
             lines.append("")
         if external:
             lines.append("### Model output data (external)\n")
             for e in external:
-                lines.append(f"- **{e.get('name', 'external dataset')}** — hosted externally, not in this repo")
+                lines.append(f"- **{scalar(e.get('name')) or 'external dataset'}** — hosted externally, not in this repo")
                 if e.get("@id"):
                     lines.append(f"  - <{e['@id']}>")
                 if e.get("contentSize"):
-                    lines.append(f"  - size: {e['contentSize']}")
+                    lines.append(f"  - size: {scalar(e['contentSize'])}")
             lines.append("")
         lines.append(":::\n")
 

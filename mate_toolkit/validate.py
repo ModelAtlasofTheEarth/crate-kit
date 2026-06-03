@@ -68,6 +68,17 @@ def validate(repo_dir, reverse_engineer=False, profile=None):
         if not (repo_dir / i).exists():
             errors.append(f"crate references missing local file `{i}`")
 
+    # 4) deep structural check via ro-crate-py on the ON-DISK crate (strict: hasPart
+    #    completeness, references, …). Catches editor mangling that our in-memory build-repair
+    #    would otherwise mask. A warning, not an error — build repairs most of it on next run.
+    crate_file = repo_dir / "ro-crate-metadata.json"
+    if crate_file.exists():
+        try:
+            from rocrate.rocrate import ROCrate
+            ROCrate(str(repo_dir))
+        except Exception as exc:
+            warnings.append(f"ro-crate-py structural check on the committed crate: {exc}")
+
     # soft checks
     if not root.get("description"):
         warnings.append("root entity has no description")
