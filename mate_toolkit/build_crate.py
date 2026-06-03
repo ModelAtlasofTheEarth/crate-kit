@@ -172,12 +172,69 @@ def _walk(repo_dir, policy):
             yield rel, False
 
 
-def build_crate(repo_dir, out_path=None, reverse_engineer=False, git_opts=None):
-    repo_dir = Path(repo_dir).resolve()
+# Root properties that are DERIVED (refreshed every build); everything else on the root is
+# authored/enriched and preserved across builds.
+DERIVED_ROOT_FIELDS = {"version", "dateCreated", "dateModified", "codeRepository",
+                       "hasPart", "distribution"}
+
+
+def _root_entity(doc):
+    return next((e for e in doc.get("@graph", []) if e.get("@id") == "./"), {})
+
+
+def _is_derived_entity(e):
+    """Derived = regenerated from the filesystem/payload each build (so replace, don't preserve).
+    Authored/enriched entities (Person, SoftwareApplication, ScholarlyArticle, …) are preserved."""
+    if e.get("@id") == "./":
+        return False
+    if e.get("@type") == "File":
+        return True
+    # NB: ExternalPayload is preserved (authored, set once via front-matter/issue/CLI), not derived.
+    i = e.get("@id", "")
+    return isinstance(i, str) and i.endswith("/")          # a local directory Dataset
+
+
+def _merge(existing, fresh):
+    """Preserve authored + enriched (from `existing`); refresh the derived layer (from `fresh`).
+    This is what makes the crate the editable single source of truth: a rebuild never clobbers
+    a human-set or enriched value, only the file manifest / git provenance / payload."""
+    eroot, froot = _root_entity(existing), _root_entity(fresh)
+    root = dict(eroot)
+    for k in DERIVED_ROOT_FIELDS:                          # refresh derived root fields
+        if k in froot:
+            root[k] = froot[k]
+        else:
+            root.pop(k, None)
+    for k, v in froot.items():                             # first-seed: fill authored gaps only
+        if k not in DERIVED_ROOT_FIELDS and k not in root:
+            root[k] = v
+
+    graph, seen = [root], {"./"}
+    for e in fresh.get("@graph", []):                      # fresh derived entities win
+        if e.get("@id") not in seen and _is_derived_entity(e):
+            graph.append(e); seen.add(e.get("@id"))
+    for src in (existing, fresh):                          # preserved entities: existing first
+        for e in src.get("@graph", []):
+            i = e.get("@id")
+            if i not in seen and not _is_derived_entity(e):
+                graph.append(e); seen.add(i)
+
+    out = dict(existing)
+    out["@graph"] = graph
+    if "@context" not in out and "@context" in fresh:
+        out["@context"] = fresh["@context"]
+    return out
+
+
+def _build_fresh(repo_dir, reverse_engineer, git_opts, seed_authored=True):
     crate = ROCrate()
 
     # 1) authored root metadata. People become proper Person entities referenced by @id.
-    root_props, source = load_root_metadata(repo_dir, reverse_engineer)
+    # seed_authored=False skips the front-matter seed entirely — used by `from-issue`, where
+    # the issue (not front-matter) is the authored source.
+    root_props, source = ({}, "none (authored externally)")
+    if seed_authored:
+        root_props, source = load_root_metadata(repo_dir, reverse_engineer)
     for k, v in root_props.items():
         if k == "creator":
             v = _add_people(crate, v)
@@ -202,11 +259,8 @@ def build_crate(repo_dir, out_path=None, reverse_engineer=False, git_opts=None):
 
     doc = crate.metadata.generate()
 
-    # 4) external data payloads (NCI/Zenodo/…) as remote entities
-    payload_ids = add_payload(doc, repo_dir)
-
-    if out_path:
-        Path(out_path).write_text(json.dumps(doc, indent=2))
+    # 4) external data payloads (NCI/Zenodo/…) as remote entities (front-matter seed only)
+    payload_ids = add_payload(doc, repo_dir) if seed_authored else []
 
     summary = {
         "repo": str(repo_dir),
@@ -220,6 +274,35 @@ def build_crate(repo_dir, out_path=None, reverse_engineer=False, git_opts=None):
             "count": len(policy.ignored),
             "payload_candidates": policy.payload_candidates,
         },
-        "graph_size": len(doc["@graph"]),
     }
+    return doc, summary
+
+
+def build_crate(repo_dir, out_path=None, reverse_engineer=False, merge=True,
+                seed_authored=True, git_opts=None):
+    """Build (or update) a repo's crate.
+
+    merge=True (default): if a crate already exists, preserve its authored/enriched content and
+    only refresh the derived layer. reverse_engineer forces a clean migration (no merge), since
+    it is seeding from an old-engine source. seed_authored=False skips the front-matter seed
+    (used by `from-issue`).
+    """
+    repo_dir = Path(repo_dir).resolve()
+    fresh, summary = _build_fresh(repo_dir, reverse_engineer, git_opts, seed_authored=seed_authored)
+
+    crate_path = repo_dir / "ro-crate-metadata.json"
+    if merge and not reverse_engineer and crate_path.exists():
+        try:
+            doc = _merge(json.loads(crate_path.read_text()), fresh)
+            summary["mode"] = "merge"
+        except Exception as err:
+            doc, summary["mode"] = fresh, f"rebuild (merge failed: {err})"
+    else:
+        doc = fresh
+        summary["mode"] = ("migrate" if reverse_engineer
+                           else "create" if not crate_path.exists() else "rebuild")
+
+    summary["graph_size"] = len(doc["@graph"])
+    if out_path:
+        Path(out_path).write_text(json.dumps(doc, indent=2))
     return doc, summary

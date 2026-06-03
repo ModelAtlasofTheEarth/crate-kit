@@ -22,3 +22,6 @@ validate = "mate_toolkit.validate:validate"
 
 [tool.setuptools]
 packages = ["mate_toolkit"]
+
+[tool.setuptools.package-data]
+mate_toolkit = ["profiles/*.yml", "profiles/*.md"]

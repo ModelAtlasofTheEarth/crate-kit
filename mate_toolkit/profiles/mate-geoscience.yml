@@ -1,0 +1,119 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# M@TE PROFILE — the single contract for a model's metadata.
+#
+# ONE definition, FOUR consumers:
+#   • the issue form          (field labels, input types, options)       → authoring
+#   • the issue→crate mapping (each field's schema.org `property`)        → build/merge
+#   • `mate validate`         (`required` + `requires_for_website`)       → the gate
+#   • a Crate-O "mode file"   (types + properties)                       → rich editor (later)
+#
+# It is editor-agnostic and domain-specific: this is the geoscience pack (a folder for now,
+# its own repo later). A different discipline swaps this file, not the engine.
+# ─────────────────────────────────────────────────────────────────────────────
+profile: mate-geoscience
+version: 0
+
+# Authoritative, PINNED contexts. Vendored — never fetched live at build time (v1's mistake).
+context:
+  - https://w3id.org/ro/crate/1.1/context
+  - https://schema.org/
+
+# ── Root entity ──────────────────────────────────────────────────────────────
+# RO-Crate requires the crate's root to be a schema.org Dataset. Each field carries
+# everything its four consumers need: the schema.org `property`, whether it's `required`,
+# the `input` hint for the form, and (for PIDs) which `enrich` resolver applies.
+root:
+  type: Dataset
+  fields:
+    title:
+      property: name
+      required: true
+      input: text
+      label: "Model title"
+    description:
+      property: description
+      required: true
+      input: textarea
+      label: "Short description (plain language, < 100 words)"
+    abstract:
+      property: abstract
+      required: false
+      input: textarea
+      label: "Scientific abstract"
+    license:
+      property: license
+      required: true
+      input: dropdown
+      label: "License"
+      options: [CC-BY-4.0, AGPL-3.0, GPL-3.0, LGPL-3.0, MPL-2.0, Apache-2.0, MIT, "(other URL)"]
+    creators:
+      property: creator
+      required: true
+      input: people          # one per line: an ORCID iD, or "Family, Given"
+      many: true
+      label: "Model creator(s) — ORCID iD or 'Family, Given', one per line"
+      enrich: author
+    keywords:
+      property: keywords
+      required: false
+      input: list
+      many: true
+      label: "Scientific keywords (comma-separated)"
+    publication_doi:
+      property: citation
+      required: false
+      input: text
+      label: "Associated publication DOI"
+      enrich: publication
+
+# ── Conventional subdirectories: typed for free (tier-2) ─────────────────────
+# A directory with one of these names gets these schema.org types/roles automatically;
+# its human description (the value-add) is supplied separately via `mate describe`.
+datasets:
+  model_code_inputs:
+    type: [Dataset, SoftwareSourceCode]
+    role: inputs
+    label: "Model code & inputs"
+  model_output_data:
+    type: [Dataset]
+    role: outputs
+    label: "Model output data"
+  figures:
+    type: [Dataset]
+    itemType: ImageObject
+    role: figures
+    label: "Figures"
+
+# ── External data payload (link-payload) ─────────────────────────────────────
+payload:
+  backends: [zenodo, nci, url]
+  default_backs: model_output_data/
+
+# ── Enrichment keep-lists ────────────────────────────────────────────────────
+# What to RETAIN from each resolved PID. Best-effort, never fatal. Answers
+# "how much of the API blob do I keep?" as config, not 800 lines of code.
+enrich:
+  publication:  { keep: [name, author, datePublished, url] }     # Crossref → ScholarlyArticle
+  author:       { keep: [givenName, familyName, "@id", affiliation] }  # ORCID → Person
+  organization: { keep: [name, "@id"] }                          # ROR → Organization
+
+# ── The admission gate (consumed by `mate validate`, NOT by render) ──────────
+# Render is permissive; the website bar is the validator. A model is catalogue-eligible
+# only if its crate satisfies these.
+requires_for_website:
+  - name
+  - license
+  - creator
+  - any: ["model_code_inputs/", external_payload]   # must have code OR a declared payload
+
+# ── Optional describe-entities (extensible add-ons; not required) ────────────
+# Declared here so the form/CLI can offer them; each maps to a contextual entity.
+optional_entities:
+  software:                                          # → SoftwareApplication
+    fields:
+      name:        { property: name }
+      doi:         { property: identifier, enrich: software }
+      repository:  { property: codeRepository }
+  compute:                                           # → Service
+    fields:
+      uri:         { property: url }

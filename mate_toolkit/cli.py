@@ -31,6 +31,14 @@ def main(argv=None):
     v.add_argument("--reverse-engineer", action="store_true",
                    help="seed root metadata from an old-engine .metadata_trail/issue_dict.json")
 
+    g = sub.add_parser("issue-form", help="generate a GitHub issue form (.yml) from the profile")
+    g.add_argument("-o", "--out", required=True, help="output path for the issue form yaml")
+    g.add_argument("--repo", default=None, help="use this repo's .mate/profile.yml (else the builtin profile)")
+
+    fi = sub.add_parser("from-issue", help="write a submitted issue-form's answers into the repo's crate")
+    fi.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
+    fi.add_argument("--body", required=True, help="path to the issue body (or '-' for stdin)")
+
     args = p.parse_args(argv)
 
     if args.cmd == "build":
@@ -44,6 +52,22 @@ def main(argv=None):
     if args.cmd == "render":
         result = render_repo(args.repo, args.out, reverse_engineer=args.reverse_engineer,
                              run_quarto=not args.no_quarto)
+        print(json.dumps(result, indent=2), file=sys.stderr)
+        return 0
+
+    if args.cmd == "issue-form":
+        from .profile import load_profile
+        from .issue_form import write_issue_form
+        import os
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        out = write_issue_form(load_profile(args.repo), args.out)
+        print(f"wrote {out}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "from-issue":
+        from .from_issue import apply_issue
+        body = sys.stdin.read() if args.body == "-" else open(args.body, encoding="utf-8").read()
+        result = apply_issue(args.repo, body)
         print(json.dumps(result, indent=2), file=sys.stderr)
         return 0
 

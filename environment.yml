@@ -9,7 +9,7 @@ name: mate
 channels: [conda-forge]
 dependencies:
   - python=3.11
-  - quarto
+  - quarto=1.9.38          # pinned: an unpinned solve produced a broken extraction on arm64
   - pip
   - pip:
       - .

@@ -1,32 +1,51 @@
-# Reusable workflow: model repos call this with
+# Reusable workflow. Model repos call it:
 #   jobs: { mate: { uses: ModelAtlasofTheEarth/mate-toolkit/.github/workflows/build.yml@v0 } }
-# It runs against the CALLER's checkout (the model repo). The toolkit itself is installed by
-# the caller's environment.yml (single source of truth for the pinned version), so local and
-# CI behave identically. No GitHub Pages here — presentation is the website's job.
+# Runs against the CALLER's checkout. The toolkit is installed by the caller's environment.yml
+# (single pinned-version source), so local and CI behave identically.
+#
+# If `issue_body` is passed (from an `on: issues` caller), it first writes those answers into
+# the crate via `mate from-issue`; then build/validate/render run as usual.
 name: build-mate-model
 
 on:
   workflow_call:
     inputs:
       render:
-        description: "also run `mate render` and upload the site artifact"
         type: boolean
         default: true
+      issue_body:
+        type: string
+        required: false
+        default: ""
+      issue_number:
+        type: string
+        required: false
+        default: ""
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write          # commit the regenerated crate back to the model repo
+      contents: write          # commit the regenerated crate
+      issues: write            # comment back on a submission issue
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0        # full history -> git provenance in the crate
+          fetch-depth: 0        # full history -> git provenance
 
       - uses: mamba-org/setup-micromamba@v2
         with:
-          environment-file: environment.yml   # the model repo's env (installs the toolkit + quarto)
+          environment-file: environment.yml
           cache-environment: true
+
+      - name: apply issue submission (if any)
+        if: ${{ inputs.issue_body != '' }}
+        shell: bash -el {0}
+        env:
+          ISSUE_BODY: ${{ inputs.issue_body }}    # via env, not interpolated into the script
+        run: |
+          printf '%s' "$ISSUE_BODY" > /tmp/issue.md
+          mate from-issue . --body /tmp/issue.md
 
       - name: build + validate
         shell: bash -el {0}
@@ -51,6 +70,14 @@ jobs:
             git commit -m "Update ro-crate-metadata.json [skip ci]"
             git push
           fi
+
+      - name: comment on the submission issue
+        if: ${{ inputs.issue_number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ inputs.issue_number }}" --body \
+            "✅ Your submission was written into \`ro-crate-metadata.json\`. Edit the crate (not this issue) to make further changes."
 
       - name: upload site artifact
         if: ${{ inputs.render }}
