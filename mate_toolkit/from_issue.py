@@ -72,6 +72,9 @@ def apply_issue(repo_dir, body, out_path=None):
         elif inp == "dropdown" and prop == "license":
             if val != "(other URL)":
                 root[prop] = {"@id": val}
+        elif spec.get("enrich") == "publication":
+            # a citation is a reference to another entity, so enrich can resolve it
+            root[prop] = {"@id": val if val.startswith("http") else f"https://doi.org/{val}"}
         else:
             root[prop] = val
         applied.append(prop)

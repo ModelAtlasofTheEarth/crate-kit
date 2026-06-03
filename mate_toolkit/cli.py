@@ -39,6 +39,9 @@ def main(argv=None):
     fi.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
     fi.add_argument("--body", required=True, help="path to the issue body (or '-' for stdin)")
 
+    e = sub.add_parser("enrich", help="resolve PIDs in the crate (ORCID, publication DOI); best-effort")
+    e.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
+
     args = p.parse_args(argv)
 
     if args.cmd == "build":
@@ -69,6 +72,11 @@ def main(argv=None):
         body = sys.stdin.read() if args.body == "-" else open(args.body, encoding="utf-8").read()
         result = apply_issue(args.repo, body)
         print(json.dumps(result, indent=2), file=sys.stderr)
+        return 0
+
+    if args.cmd == "enrich":
+        from .enrich import enrich as enrich_repo
+        print(json.dumps(enrich_repo(args.repo), indent=2), file=sys.stderr)
         return 0
 
     if args.cmd == "validate":

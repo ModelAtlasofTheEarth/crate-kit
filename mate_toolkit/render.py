@@ -20,6 +20,32 @@ from .build_crate import build_crate
 # could change this; Tier-1 default keeps infrastructure dirs off the page.
 VIEW_HIDE_PREFIX = "."
 
+IMG_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+def _is_image(file_id):
+    return Path(file_id).suffix.lower() in IMG_EXT
+
+
+def _collect_images(doc, repo_dir, out_dir):
+    """Copy image File entities into out_dir/assets/ and return [(label, relative-src)]."""
+    assets = Path(out_dir) / "assets"
+    images = []
+    for e in doc["@graph"]:
+        if e.get("@type") != "File":
+            continue
+        i = e.get("@id", "")
+        if not i or i.startswith(("http", "#", "./")) or not _is_image(i):
+            continue
+        src = Path(repo_dir) / i
+        if not src.exists():
+            continue
+        assets.mkdir(parents=True, exist_ok=True)
+        flat = i.replace("/", "__")
+        shutil.copy(src, assets / flat)
+        images.append((i, f"assets/{flat}"))
+    return images
+
 
 def _human_size(n):
     n = float(n or 0)
@@ -43,13 +69,14 @@ def _authors(root, by_id):
 
 
 def _sections(graph):
-    """Group File entities by their top-level path segment (the directory tab)."""
+    """Group non-image File entities by top-level path segment (the directory tab).
+    Images are shown embedded in the Figures tab instead of listed here."""
     sections = {}
     for e in graph:
         if e.get("@type") != "File":
             continue
         i = e.get("@id", "")
-        if not i or i.startswith(("http", "#", "./")):
+        if not i or i.startswith(("http", "#", "./")) or _is_image(i):
             continue
         parts = i.strip("/").split("/")
         key = "(repository root)" if len(parts) == 1 else parts[0]
@@ -68,7 +95,8 @@ def _order(name):
     return (1, name)
 
 
-def build_qmd(doc, repo_name):
+def build_qmd(doc, repo_name, images=None):
+    images = images or []
     graph = doc["@graph"]
     by_id = {e.get("@id"): e for e in graph}
     root = by_id.get("./", {})
@@ -112,12 +140,17 @@ def build_qmd(doc, repo_name):
         lines.append("### Abstract\n")
         lines.append(root["abstract"] + "\n")
 
-    # Tier-1 dynamic tabs: one per top-level directory, plus external payloads
+    # Tier-1 dynamic tabs: Figures, one per top-level directory, plus external payloads
     sections = _sections(graph)
     external = [e for e in graph if e.get("additionalType") == "ExternalPayload"]
-    if sections or external:
+    if sections or external or images:
         lines.append("## Contents\n")
         lines.append("::: {.panel-tabset}\n")
+        if images:
+            lines.append("### Figures\n")
+            for label, src in images:
+                lines.append(f"![{label}]({src})\n")
+            lines.append("")
         for name in sorted(sections, key=_order):
             files = sorted(sections[name], key=lambda e: e["@id"])
             lines.append(f"### {name}\n")
@@ -149,8 +182,9 @@ def render(repo, out_dir, reverse_engineer=False, run_quarto=True):
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    images = _collect_images(doc, Path(repo).resolve(), out)
     qmd_path = out / "model.qmd"
-    qmd_path.write_text(build_qmd(doc, repo_name))
+    qmd_path.write_text(build_qmd(doc, repo_name, images))
 
     result = {"qmd": str(qmd_path), "quarto": None, "outputs": []}
 

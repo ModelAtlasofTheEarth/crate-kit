@@ -53,6 +53,10 @@ jobs:
           mate build .
           mate validate .
 
+      - name: enrich PIDs (best-effort; never fails the build)
+        shell: bash -el {0}
+        run: mate enrich . || echo "enrich skipped"
+
       - name: render
         if: ${{ inputs.render }}
         shell: bash -el {0}
