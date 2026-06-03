@@ -25,9 +25,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write          # commit the regenerated crate
-      issues: write            # comment back on a submission issue
+    # Permissions are set by the CALLER (a reusable workflow can't request more than the caller
+    # grants, or the run fails to start). Push callers grant `contents: write`; the on-issue
+    # caller also grants `issues: write` for the comment step.
     steps:
       - uses: actions/checkout@v4
         with:
