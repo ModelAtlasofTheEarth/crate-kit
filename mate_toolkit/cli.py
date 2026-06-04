@@ -30,6 +30,9 @@ def main(argv=None):
     v.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
     v.add_argument("--reverse-engineer", action="store_true",
                    help="seed root metadata from an old-engine .metadata_trail/issue_dict.json")
+    v.add_argument("--strict", action="store_true",
+                   help="escalate website-readiness problems (missing fields/eligibility) to "
+                        "errors; without it they are informational warnings (build stays green)")
 
     g = sub.add_parser("issue-form", help="generate a GitHub issue form (.yml) from the profile")
     g.add_argument("-o", "--out", required=True, help="output path for the issue form yaml")
@@ -128,7 +131,8 @@ def main(argv=None):
         return 0
 
     if args.cmd == "validate":
-        errors, warnings = validate_repo(args.repo, reverse_engineer=args.reverse_engineer)
+        errors, warnings = validate_repo(args.repo, reverse_engineer=args.reverse_engineer,
+                                         strict=args.strict)
         for w in warnings:
             print(f"WARNING: {w}", file=sys.stderr)
         for e in errors:

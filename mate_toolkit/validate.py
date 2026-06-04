@@ -30,8 +30,17 @@ def _satisfied(req, root, by_id, graph):
     return bool(root.get(req))
 
 
-def validate(repo_dir, reverse_engineer=False, profile=None):
-    """Return (errors, warnings). Empty errors == valid."""
+def validate(repo_dir, reverse_engineer=False, profile=None, strict=False):
+    """Return (errors, warnings). Empty errors == valid.
+
+    Two tiers:
+    - STRUCTURAL (always hard errors): the crate is broken — it references a local file that
+      doesn't exist. (ro-crate-py's deep check is a warning; build repairs most of it.)
+    - READINESS (soft by default): the crate is well-formed but not yet catalogue-ready —
+      missing required root fields / website-eligibility. A fresh, unseeded repo is legitimately
+      not-ready, so the build pipeline shouldn't go red over it. Pass strict=True (the explicit
+      `mate validate --strict` gate, e.g. for registry submission) to escalate these to errors.
+    """
     repo_dir = Path(repo_dir)
     profile = profile or load_profile(repo_dir)
 
@@ -40,25 +49,25 @@ def validate(repo_dir, reverse_engineer=False, profile=None):
     by_id = {e.get("@id"): e for e in graph}
     root = by_id.get("./", {})
 
-    errors, warnings = [], []
+    errors, warnings, readiness = [], [], []
     reported = set()
 
-    # 1) required root fields (well-formedness) — from the profile
+    # 1) required root fields (well-formedness) — from the profile [readiness]
     for fname, fdef in (profile.get("root", {}).get("fields", {}) or {}).items():
         if fdef.get("required"):
             prop = fdef.get("property", fname)
             if not root.get(prop):
-                errors.append(f"missing required field `{fname}` (root.{prop})")
+                readiness.append(f"missing required field `{fname}` (root.{prop})")
                 reported.add(prop)
 
-    # 2) website-eligibility gate — from the profile
+    # 2) website-eligibility gate — from the profile [readiness]
     for req in profile.get("requires_for_website", []) or []:
         if isinstance(req, str) and req in reported:
             continue  # already reported as a missing required field
         if not _satisfied(req, root, by_id, graph):
-            errors.append(f"not website-eligible: requires {req!r}")
+            readiness.append(f"not website-eligible: requires {req!r}")
 
-    # 3) referenced local files must exist
+    # 3) referenced local files must exist [structural — always hard]
     for e in graph:
         if e.get("@type") != "File":
             continue
@@ -82,5 +91,12 @@ def validate(repo_dir, reverse_engineer=False, profile=None):
     # soft checks
     if not root.get("description"):
         warnings.append("root entity has no description")
+
+    # readiness: hard under --strict (a gate), otherwise informational warnings so a fresh /
+    # unseeded repo still builds green.
+    if strict:
+        errors += readiness
+    else:
+        warnings += [f"not yet catalogue-ready: {r}" for r in readiness]
 
     return errors, warnings
