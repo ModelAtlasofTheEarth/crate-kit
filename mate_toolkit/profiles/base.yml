@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BASE PROFILE — the generic schema.org layer.
+#
+# The domain-FREE contract: turn ANY GitHub repository into a schema.org RO-Crate.
+# It uses schema.org only — no CodeMeta, no discipline vocabulary. Higher layers
+# extend this: a `computational` profile adds CodeMeta (build instructions, etc.);
+# a `geoscience` profile adds a discipline vocabulary. The engine itself knows
+# nothing about any of them — it just executes whichever profile it's given.
+# ─────────────────────────────────────────────────────────────────────────────
+profile: base
+version: 0
+
+# schema.org only (+ the RO-Crate context). PINNED — never fetched live at build time.
+context:
+  - https://w3id.org/ro/crate/1.1/context
+  - https://schema.org/
+
+# Root entity (RO-Crate requires a schema.org Dataset). Universal fields only.
+root:
+  type: Dataset
+  fields:
+    title:       { property: name,        required: true,  input: text,     label: "Title" }
+    description: { property: description,  required: true,  input: textarea, label: "Short description" }
+    license:     { property: license,      required: true,  input: text,     label: "License (SPDX id or URL)" }
+    creators:    { property: creator,      required: true,  input: people, many: true, label: "Creator(s) — ORCID iD or 'Family, Given'", enrich: author }
+    keywords:    { property: keywords,     required: false, input: list, many: true, label: "Keywords" }
+    publication: { property: citation,     required: false, input: text,     label: "Related publication (DOI)", enrich: publication }
+
+# Generic external-payload backends (no discipline-specific stores).
+payload:
+  backends: [git, zenodo, url]
+
+# Enrichment keep-lists (generic PIDs: Crossref / ORCID / ROR).
+enrich:
+  publication:  { keep: [name, author, datePublished, url] }
+  author:       { keep: [givenName, familyName, "@id", affiliation] }
+  organization: { keep: [name, "@id"] }
+
+# Generic catalogue gate.
+requires_for_website:
+  - name
+  - license
+  - creator
+
+# Component types — schema.org ONLY (no CodeMeta terms like buildInstructions).
+component_types:
+  Dataset:
+    label: "Dataset"
+    fields:
+      encodingFormat:       { label: "File format(s)", input: list, help: "e.g. application/x-hdf5, text/csv" }
+      variableMeasured:     { label: "Variables", input: list }
+      measurementTechnique: { label: "How it was produced", input: text }
+      contentSize:          { label: "Total size", input: text }
+  SoftwareSourceCode:
+    label: "Software source code"
+    fields:
+      programmingLanguage:  { label: "Language(s)", input: list }
+      runtimePlatform:      { label: "Runtime platform", input: text }
+      codeRepository:       { label: "Source repository", input: text }
+      targetProduct:        { label: "What it produces / runs as", input: text }
+  SoftwareApplication:
+    label: "Software application"
+    fields:
+      softwareVersion:      { label: "Version", input: text }
+      operatingSystem:      { label: "Operating system", input: text }
+      applicationCategory:  { label: "Category", input: text }
+      url:                  { label: "Homepage / DOI", input: text }
+  ImageObject:
+    label: "Image / figure"
+    fields:
+      caption:              { label: "Caption", input: text }
+      encodingFormat:       { label: "Format", input: text }
+      contentUrl:           { label: "URL (if hosted elsewhere)", input: text }
+  CreativeWork:
+    label: "Other (generic creative work)"
+    fields:
+      name:                 { label: "Name", input: text }
+      description:          { label: "Description", input: textarea }
+      url:                  { label: "URL", input: text }
+      author:               { label: "Author(s)", input: people, many: true }

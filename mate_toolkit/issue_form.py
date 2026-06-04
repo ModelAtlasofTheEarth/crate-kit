@@ -7,9 +7,17 @@ import yaml
 _PEOPLE_HELP = 'One per line: an ORCID iD (e.g. 0000-0002-1270-4377), or "Family, Given".'
 _LIST_HELP = "Comma-separated."
 
-_INTRO = ("Describe your model. On submit, an automated action writes these values into the "
-          "model's RO-Crate (`ro-crate-metadata.json`) — the single source of truth. "
+# Generic fallbacks. A profile's `form:` block overrides any of these, so domain wording
+# ("model", "M@TE") lives in the profile — never hardcoded in the engine.
+_INTRO = ("Describe your dataset. On submit, an automated action writes these values into the "
+          "RO-Crate (`ro-crate-metadata.json`) — the single source of truth. "
           "**Edit the crate afterwards (CLI / editor), not by reopening this issue.**")
+_FORM_DEFAULTS = {
+    "name": "New dataset",
+    "description": "Describe a dataset; an action writes it into the crate.",
+    "title": "[dataset] ",
+    "labels": ["dataset"],
+}
 
 
 def form_spec(profile):
@@ -53,13 +61,14 @@ def _element(spec):
 
 
 def build_issue_form(profile):
-    body = [{"type": "markdown", "attributes": {"value": _INTRO}}]
+    form = profile.get("form", {}) or {}
+    body = [{"type": "markdown", "attributes": {"value": form.get("intro", _INTRO)}}]
     body += [_element(s) for s in form_spec(profile)]
     return {
-        "name": "New M@TE model",
-        "description": "Describe a model; an action writes it into the crate.",
-        "title": "[model] ",
-        "labels": ["model-submission"],
+        "name": form.get("name", _FORM_DEFAULTS["name"]),
+        "description": form.get("description", _FORM_DEFAULTS["description"]),
+        "title": form.get("title", _FORM_DEFAULTS["title"]),
+        "labels": form.get("labels", _FORM_DEFAULTS["labels"]),
         "body": body,
     }
 

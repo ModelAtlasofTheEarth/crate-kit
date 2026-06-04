@@ -51,8 +51,9 @@ def _load_yaml_frontmatter(readme_path):
     return data.get("mate", data) if isinstance(data, dict) else {}
 
 
-def load_root_metadata(repo_dir, reverse_engineer=False):
-    """Return (root_props, source_label)."""
+def load_root_metadata(repo_dir, reverse_engineer=False, profile=None):
+    """Return (root_props, source_label). `profile` drives which authored keys map to which
+    schema.org properties — so the engine carries no domain-specific field list."""
     repo_dir = Path(repo_dir)
 
     mate_yml = repo_dir / ".mate" / "metadata.yml"
@@ -60,11 +61,11 @@ def load_root_metadata(repo_dir, reverse_engineer=False):
         data = yaml.safe_load(mate_yml.read_text()) or {}
         data = data.get("mate", data) if isinstance(data, dict) else {}
         if data:
-            return _root_from_authored(data), str(mate_yml.relative_to(repo_dir))
+            return _root_from_authored(data, profile), str(mate_yml.relative_to(repo_dir))
 
     fm = _load_yaml_frontmatter(repo_dir / "README.md")
     if fm:
-        return _root_from_authored(fm), "README.md front-matter"
+        return _root_from_authored(fm, profile), "README.md front-matter"
 
     if reverse_engineer:
         issue_dict = repo_dir / ".metadata_trail" / "issue_dict.json"
@@ -75,18 +76,32 @@ def load_root_metadata(repo_dir, reverse_engineer=False):
     return {}, "none (no authored metadata found)"
 
 
-def _root_from_authored(data):
+def _root_from_authored(data, profile=None):
+    """Map authored keys -> schema.org root properties, DRIVEN BY THE PROFILE.
+
+    Each `root.fields` entry declares `property` (target) and `input` (shape). The engine
+    knows no field names itself, so a profile from any discipline maps its own fields.
+    Shapes: people -> minted Person refs; license -> {@id}; list/many -> list; else scalar.
+    """
+    if profile is None:
+        from .profile import load_profile
+        profile = load_profile()
+    fields = (profile.get("root", {}) or {}).get("fields", {}) or {}
     props = {}
-    for k, target in ROOT_SCALARS.items():
-        if data.get(k):
-            props[target] = data[k]
-    if data.get("keywords"):
-        props["keywords"] = data["keywords"]
-    if data.get("license"):
-        props["license"] = {"@id": str(data["license"])}
-    creators = data.get("creators") or []
-    if creators:
-        props["creator"] = [_person(c) for c in creators]
+    for key, fdef in fields.items():
+        val = data.get(key)
+        if val in (None, "", [], {}):
+            continue
+        prop = fdef.get("property", key)
+        inp = fdef.get("input")
+        if inp == "people":
+            props[prop] = [_person(c) for c in (val if isinstance(val, list) else [val])]
+        elif prop == "license":
+            props[prop] = {"@id": str(val)}
+        elif inp == "list" or fdef.get("many"):
+            props[prop] = val if isinstance(val, list) else [val]
+        else:
+            props[prop] = val
     return props
 
 
@@ -251,7 +266,9 @@ def _build_fresh(repo_dir, reverse_engineer, git_opts, seed_authored=True):
     # the issue (not front-matter) is the authored source.
     root_props, source = ({}, "none (authored externally)")
     if seed_authored:
-        root_props, source = load_root_metadata(repo_dir, reverse_engineer)
+        from .profile import load_profile
+        root_props, source = load_root_metadata(repo_dir, reverse_engineer,
+                                                 profile=load_profile(repo_dir))
     for k, v in root_props.items():
         if k == "creator":
             v = _add_people(crate, v)

@@ -8,7 +8,10 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_PROFILE = "mate-geoscience"
+# The engine is domain-FREE by default: a bare schema.org dataset crate. A discipline
+# (e.g. MATE geoscience) is opted INTO by the repo carrying `.mate/profile.yml`, not by the
+# engine. So copying the toolkit + a template into a new field "just works" generically.
+DEFAULT_PROFILE = "base"
 
 
 def load_profile(repo_dir=None, name=DEFAULT_PROFILE):
