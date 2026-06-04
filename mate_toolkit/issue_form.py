@@ -69,3 +69,43 @@ def write_issue_form(profile, out_path):
         yaml.safe_dump(build_issue_form(profile), f, sort_keys=False,
                        default_flow_style=False, allow_unicode=True)
     return out_path
+
+
+# ── per-component-type "describe" forms (the chooser becomes the type-picker) ──
+
+def component_form_spec(profile, type_):
+    """Ordered specs for a describe-<type> form, shared by the generator and the parser."""
+    fields = ((profile.get("component_types", {}) or {}).get(type_, {}) or {}).get("fields", {})
+    specs = [
+        {"id": "target", "role": "target", "input": "text", "required": True,
+         "label": "Folder to describe (e.g. model_code_inputs/)"},
+        {"id": "name", "property": "name", "input": "text", "label": "Name"},
+        {"id": "description", "property": "description", "input": "textarea", "label": "Description"},
+    ]
+    for prop, fdef in fields.items():
+        specs.append({"id": prop, "property": prop, "input": fdef.get("input", "text"),
+                      "label": fdef.get("label", prop), "options": fdef.get("options")})
+    return specs
+
+
+def build_component_form(profile, type_):
+    label = ((profile.get("component_types", {}) or {}).get(type_, {}) or {}).get("label", type_)
+    body = [{"type": "markdown", "attributes": {"value": (
+        f"Describe a **{label}** component. Give the folder and fill what you can — an action "
+        "writes it into the crate (the single source of truth)."
+    )}}]
+    body += [_element(s) for s in component_form_spec(profile, type_)]
+    return {
+        "name": f"Describe: {label}",
+        "description": f"Describe a {type_} component of this model",
+        "title": f"[describe:{type_}] ",
+        "labels": ["describe"],
+        "body": body,
+    }
+
+
+def write_component_form(profile, type_, out_path):
+    with open(out_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(build_component_form(profile, type_), f, sort_keys=False,
+                       default_flow_style=False, allow_unicode=True)
+    return out_path

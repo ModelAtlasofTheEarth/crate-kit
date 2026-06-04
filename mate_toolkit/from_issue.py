@@ -17,6 +17,42 @@ _HEAD = re.compile(r"^###\s+(?P<label>.+?)\s*$", re.M)
 _EMPTY = ("", "_No response_", "_no response_")
 
 
+_TYPE_RE = re.compile(r"\[describe:([A-Za-z]+)\]")
+
+
+def apply_describe_issue(repo_dir, body, type_=None, title=None):
+    """Parse a submitted describe-<type> issue and write it into the crate via `describe`.
+    The type comes from --type or is parsed from the issue title `[describe:TYPE]`."""
+    from .issue_form import component_form_spec
+    from .describe import describe
+    from .profile import load_profile
+
+    if not type_ and title:
+        m = _TYPE_RE.search(title)
+        type_ = m.group(1) if m else None
+    if not type_:
+        return {"error": "could not determine component type (need --type or a '[describe:TYPE]' title)"}
+
+    parsed = parse_issue_body(body)
+    specs = {s["label"]: s for s in component_form_spec(load_profile(repo_dir), type_)}
+    target, name, description, sets = None, None, None, []
+    for label, spec in specs.items():
+        val = parsed.get(label, "")
+        if val in _EMPTY:
+            continue
+        if spec.get("role") == "target":
+            target = val.rstrip("/") + "/"
+        elif spec.get("property") == "name":
+            name = val
+        elif spec.get("property") == "description":
+            description = val
+        elif spec.get("property"):
+            sets.append(f"{spec['property']}={val}")
+    if not target:
+        return {"error": "no target folder given in the issue"}
+    return describe(repo_dir, target, type_=type_, name=name, description=description, sets=sets)
+
+
 def parse_issue_body(body):
     """GitHub renders an issue-form submission as '### <label>\\n\\n<value>'. Return {label: value}."""
     out = {}

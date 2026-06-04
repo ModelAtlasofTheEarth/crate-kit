@@ -21,6 +21,10 @@ on:
         type: string
         required: false
         default: ""
+      issue_title:
+        type: string
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -43,9 +47,14 @@ jobs:
         shell: bash -el {0}
         env:
           ISSUE_BODY: ${{ inputs.issue_body }}    # via env, not interpolated into the script
+          ISSUE_TITLE: ${{ inputs.issue_title }}
         run: |
           printf '%s' "$ISSUE_BODY" > /tmp/issue.md
-          mate from-issue . --body /tmp/issue.md
+          if [[ "$ISSUE_TITLE" == \[describe:* ]]; then
+            mate describe-from-issue . --body /tmp/issue.md --title "$ISSUE_TITLE"
+          else
+            mate from-issue . --body /tmp/issue.md
+          fi
 
       - name: build + validate
         shell: bash -el {0}

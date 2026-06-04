@@ -34,6 +34,13 @@ def main(argv=None):
     g = sub.add_parser("issue-form", help="generate a GitHub issue form (.yml) from the profile")
     g.add_argument("-o", "--out", required=True, help="output path for the issue form yaml")
     g.add_argument("--repo", default=None, help="use this repo's .mate/profile.yml (else the builtin profile)")
+    g.add_argument("--type", dest="type_", help="generate a describe-<type> form for a component type (else the root form)")
+
+    di = sub.add_parser("describe-from-issue", help="apply a submitted describe-<type> issue to the crate")
+    di.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
+    di.add_argument("--body", required=True, help="path to the issue body (or '-' for stdin)")
+    di.add_argument("--type", dest="type_", help="component type (else parsed from --title)")
+    di.add_argument("--title", help="issue title (used to parse '[describe:TYPE]')")
 
     fi = sub.add_parser("from-issue", help="write a submitted issue-form's answers into the repo's crate")
     fi.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
@@ -74,11 +81,21 @@ def main(argv=None):
 
     if args.cmd == "issue-form":
         from .profile import load_profile
-        from .issue_form import write_issue_form
+        from .issue_form import write_issue_form, write_component_form
         import os
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-        out = write_issue_form(load_profile(args.repo), args.out)
+        if args.type_:
+            out = write_component_form(load_profile(args.repo), args.type_, args.out)
+        else:
+            out = write_issue_form(load_profile(args.repo), args.out)
         print(f"wrote {out}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "describe-from-issue":
+        from .from_issue import apply_describe_issue
+        body = sys.stdin.read() if args.body == "-" else open(args.body, encoding="utf-8").read()
+        result = apply_describe_issue(args.repo, body, type_=args.type_, title=args.title)
+        print(json.dumps(result, indent=2), file=sys.stderr)
         return 0
 
     if args.cmd == "from-issue":
