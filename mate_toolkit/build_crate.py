@@ -192,6 +192,10 @@ def _walk(repo_dir, policy):
 DERIVED_ROOT_FIELDS = {"version", "dateCreated", "dateModified", "codeRepository",
                        "hasPart", "distribution"}
 
+# File-entity properties DERIVED from the filesystem (refreshed every build); everything else
+# on a File is authored (mate describe / Crate-O) and must survive rebuilds.
+DERIVED_FILE_FIELDS = {"contentSize"}
+
 
 def _root_entity(doc):
     return next((e for e in doc.get("@graph", []) if e.get("@id") == "./"), {})
@@ -204,7 +208,8 @@ def _merge(existing, fresh):
 
     Entity handling:
     - root ("./"): merge — refresh DERIVED_ROOT_FIELDS, preserve everything else authored.
-    - File: existence + content follow the fresh build (replaced).
+    - File: existence follows the fresh build; DERIVED_FILE_FIELDS (contentSize) are refreshed
+      from it, but authored properties (description, additionalType, author, …) are preserved.
     - directory Dataset (@id ends "/"): existence follows the fresh build, but the EXISTING
       entity is kept so an authored description (`mate describe`) / type survives rebuilds.
     - everything else (Person, ScholarlyArticle, ExternalPayload, descriptor): preserved.
@@ -230,7 +235,18 @@ def _merge(existing, fresh):
         if i in seen:
             continue
         if e.get("@type") == "File":
-            graph.append(e); seen.add(i)                   # files: take fresh
+            ex = existing_by_id.get(i)
+            if ex:
+                merged = dict(ex)                          # keep authored props (+ any richer @type)
+                for k in DERIVED_FILE_FIELDS:              # refresh only the derived bits
+                    if k in e:
+                        merged[k] = e[k]
+                    else:
+                        merged.pop(k, None)
+                graph.append(merged)
+            else:
+                graph.append(e)                            # new file: take fresh
+            seen.add(i)
         elif isinstance(i, str) and i.endswith("/"):
             graph.append(existing_by_id.get(i, e)); seen.add(i)   # dir: keep authored desc
 
