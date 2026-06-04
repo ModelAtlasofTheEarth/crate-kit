@@ -68,16 +68,30 @@ jobs:
         shell: bash -el {0}
         run: mate render . -o _site
 
-      - name: commit regenerated crate
+      - name: refresh edit-entity issue form (live folder dropdown)
+        # Only for repos that opt in by shipping the form. First-level, non-hidden directories
+        # become the path-dropdown options (clamped to depth 1 by design), so the picker tracks
+        # the repo. Regenerated from the repo's own profile; git-diff means it only re-commits
+        # when the folder set actually changes.
+        if: ${{ hashFiles('.github/ISSUE_TEMPLATE/edit-entity.yml') != '' }}
+        shell: bash -el {0}
+        run: |
+          args=()
+          while IFS= read -r d; do [ -n "$d" ] && args+=(--dir "$d/"); done < <(
+            find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' | sed 's|^\./||' | sort)
+          mate issue-form --repo . --out .github/ISSUE_TEMPLATE/edit-entity.yml --title "[edit] " "${args[@]}"
+
+      - name: commit regenerated crate (+ refreshed form)
         shell: bash -el {0}
         run: |
           git config user.name  "mate-bot"
           git config user.email "mate-bot@users.noreply.github.com"
           git add ro-crate-metadata.json
+          git add .github/ISSUE_TEMPLATE/edit-entity.yml 2>/dev/null || true
           if git diff --cached --quiet; then
-            echo "crate unchanged"
+            echo "nothing to commit"
           else
-            git commit -m "Update ro-crate-metadata.json [skip ci]"
+            git commit -m "Update crate + issue form [skip ci]"
             git push
           fi
 
