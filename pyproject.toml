@@ -3,25 +3,25 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mate-toolkit"
+name = "crate-kit"
 version = "0.0.1"
-description = "FAIR research-object toolkit: build an RO-Crate from a repository and render it."
+description = "Link a GitHub repository to its RO-Crate: build the crate from the repo and render it."
 requires-python = ">=3.10"
 dependencies = ["rocrate", "pyyaml", "pathspec"]
 # NB: quarto is NOT a pip package — it comes from conda-forge (see environment.yml)
-# or the quarto-dev/quarto-actions/setup action in CI. Only `mate render` needs it.
+# or the quarto-dev/quarto-actions/setup action in CI. Only `crate render` needs it.
 
 [project.scripts]
-mate = "mate_toolkit.cli:main"
+crate = "crate_kit.cli:main"
 
 # Seeds the plugin model (TARGET_ARCHITECTURE.md §5b): actions are discovered here.
-[project.entry-points."mate.actions"]
-build = "mate_toolkit.build_crate:build_crate"
-render = "mate_toolkit.render:render"
-validate = "mate_toolkit.validate:validate"
+[project.entry-points."crate_kit.actions"]
+build = "crate_kit.build_crate:build_crate"
+render = "crate_kit.render:render"
+validate = "crate_kit.validate:validate"
 
 [tool.setuptools]
-packages = ["mate_toolkit"]
+packages = ["crate_kit"]
 
 [tool.setuptools.package-data]
-mate_toolkit = ["profiles/*.yml", "profiles/*.md"]
+crate_kit = ["profiles/*.yml", "profiles/*.md"]

@@ -21,7 +21,7 @@ def _slug(s):
 
 def _get_json(url, accept="application/json"):
     try:
-        req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": "mate-toolkit"})
+        req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": "crate-kit"})
         with urllib.request.urlopen(req, timeout=15) as r:
             return json.loads(r.read().decode("utf-8"))
     except Exception:
@@ -60,42 +60,53 @@ def _doi_of(ref):
 
 
 def _enrich_publication(doc, root, keep):
-    cit = root.get("citation")
-    doi = _doi_of(cit)
-    if not doi:
-        return False
-    cid = cit["@id"]
-    if any(e.get("@id") == cid and e.get("@type") == "ScholarlyArticle" for e in doc["@graph"]):
-        return False  # already resolved
-    data = _get_json(f"https://api.crossref.org/works/{doi}")
-    if not data:
-        return False
-    m = data.get("message", {})
-    ent = {"@id": cid, "@type": "ScholarlyArticle"}
-    if "name" in keep and m.get("title"):
-        ent["name"] = m["title"][0]
-    if "datePublished" in keep:
-        parts = (m.get("published") or {}).get("date-parts") or []
-        if parts and parts[0]:
-            ent["datePublished"] = "-".join(str(x) for x in parts[0])
-    if "url" in keep and m.get("URL"):
-        ent["url"] = m["URL"]
-    if "author" in keep and m.get("author"):
-        refs = []
-        for a in m["author"]:
-            nm = " ".join(x for x in (a.get("given"), a.get("family")) if x)
-            if not nm:
-                continue
-            # give every author a real @id (ORCID if present, else a blank node) — anonymous
-            # inline objects don't round-trip safely through editors like Crate-O.
-            pid = a.get("ORCID") or ("#author-" + _slug(nm))
-            if not any(e.get("@id") == pid for e in doc["@graph"]):
-                doc["@graph"].append({"@id": pid, "@type": "Person", "name": nm})
-            refs.append({"@id": pid})
-        if refs:
-            ent["author"] = refs
-    doc["@graph"].append(ent)
-    return True
+    """Resolve every DOI referenced from root.citation (a dict or a list). Fills an existing stub
+    entity if present (e.g. one minted by `mate add publication`), else creates the entity.
+    Returns the list of resolved DOIs."""
+    cits = root.get("citation")
+    cits = cits if isinstance(cits, list) else ([cits] if cits else [])
+    by_id = {e.get("@id"): e for e in doc["@graph"]}
+    resolved = []
+    for cit in cits:
+        doi = _doi_of(cit)
+        if not doi:
+            continue
+        cid = cit["@id"]
+        existing = by_id.get(cid)
+        if existing and existing.get("name"):
+            continue  # already resolved
+        data = _get_json(f"https://api.crossref.org/works/{doi}")
+        if not data:
+            continue
+        m = data.get("message", {})
+        ent = existing or {"@id": cid, "@type": "ScholarlyArticle"}
+        if "name" in keep and m.get("title"):
+            ent["name"] = m["title"][0]
+        if "datePublished" in keep:
+            parts = (m.get("published") or {}).get("date-parts") or []
+            if parts and parts[0]:
+                ent["datePublished"] = "-".join(str(x) for x in parts[0])
+        if "url" in keep and m.get("URL"):
+            ent["url"] = m["URL"]
+        if "author" in keep and m.get("author"):
+            refs = []
+            for a in m["author"]:
+                nm = " ".join(x for x in (a.get("given"), a.get("family")) if x)
+                if not nm:
+                    continue
+                # give every author a real @id (ORCID if present, else a blank node) — anonymous
+                # inline objects don't round-trip safely through editors like Crate-O.
+                pid = a.get("ORCID") or ("#author-" + _slug(nm))
+                if not any(e.get("@id") == pid for e in doc["@graph"]):
+                    doc["@graph"].append({"@id": pid, "@type": "Person", "name": nm})
+                refs.append({"@id": pid})
+            if refs:
+                ent["author"] = refs
+        if not existing:
+            doc["@graph"].append(ent)
+            by_id[cid] = ent
+        resolved.append(doi)
+    return resolved
 
 
 def enrich(repo_dir, out_path=None):
@@ -116,8 +127,7 @@ def enrich(repo_dir, out_path=None):
         if e.get("@type") == "Person" and not e.get("name"):
             if _enrich_person(e, person_keep):
                 resolved.append(e.get("@id"))
-    if _enrich_publication(doc, root, pub_keep):
-        resolved.append(_doi_of(root.get("citation")))
+    resolved += _enrich_publication(doc, root, pub_keep)
 
     Path(out_path or crate_path).write_text(json.dumps(doc, indent=2))
     return {"resolved": resolved}

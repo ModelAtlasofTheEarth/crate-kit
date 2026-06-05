@@ -19,5 +19,5 @@ def load_profile(repo_dir=None, name=DEFAULT_PROFILE):
         override = Path(repo_dir) / ".mate" / "profile.yml"
         if override.exists():
             return yaml.safe_load(override.read_text()) or {}
-    text = resources.files("mate_toolkit").joinpath("profiles", f"{name}.yml").read_text(encoding="utf-8")
+    text = resources.files("crate_kit").joinpath("profiles", f"{name}.yml").read_text(encoding="utf-8")
     return yaml.safe_load(text) or {}

@@ -1,11 +1,11 @@
 # Fully tracked environment. The SAME file is used locally and in CI (micromamba),
-# so behaviour is identical. `pip: [.]` installs the mate-toolkit package, which pulls
+# so behaviour is identical. `pip: [.]` installs the crate-kit package, which pulls
 # rocrate / pyyaml / pathspec from pyproject.toml. quarto comes from conda-forge.
 #
-#   conda env create -f environment.yml      # creates env "mate"
-#   conda activate mate
-#   mate build . && mate validate . && mate render . -o _site
-name: mate
+#   conda env create -f environment.yml      # creates env "crate-kit"
+#   conda activate crate-kit
+#   crate build . && crate validate . && crate render . -o _site
+name: crate-kit
 channels: [conda-forge]
 dependencies:
   - python=3.11

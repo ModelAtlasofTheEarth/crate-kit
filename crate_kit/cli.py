@@ -9,7 +9,7 @@ from .validate import validate as validate_repo
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="mate", description="FAIR research-object toolkit")
+    p = argparse.ArgumentParser(prog="crate", description="FAIR research-object toolkit")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     b = sub.add_parser("build", help="build an RO-Crate from a repository's contents")
@@ -34,12 +34,15 @@ def main(argv=None):
                    help="escalate website-readiness problems (missing fields/eligibility) to "
                         "errors; without it they are informational warnings (build stays green)")
 
-    g = sub.add_parser("issue-form", help="generate the GitHub edit-entity issue form (.yml) from the profile")
+    g = sub.add_parser("issue-form", help="generate a GitHub issue form (.yml) from the profile")
     g.add_argument("-o", "--out", required=True, help="output path for the issue form yaml")
     g.add_argument("--repo", default=None, help="use this repo's .mate/profile.yml (else the builtin profile)")
+    g.add_argument("--kind", choices=["configure", "data", "contextual"], default="data",
+                   help="'configure' = edit root; 'data' = edit a non-root data entity (default); "
+                        "'contextual' = add a remote reference")
     g.add_argument("--dir", action="append", dest="dirs", metavar="PATH",
-                   help="a live folder to offer in the path dropdown (repeatable; GitHub-surface knob)")
-    g.add_argument("--title", help="issue title prefix the build workflow gates on (default '[edit] ')")
+                   help="a live folder to offer in the data form's path dropdown (repeatable; GitHub-surface knob)")
+    g.add_argument("--title", help="issue title prefix the build workflow gates on")
 
     fi = sub.add_parser("from-issue", help="write a submitted issue-form's answers into the repo's crate")
     fi.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
@@ -62,14 +65,21 @@ def main(argv=None):
                    help="set any schema.org/CodeMeta property (repeatable; the escape hatch)")
     d.add_argument("--list-fields", action="store_true", help="list the curated fields for --type (or all types) and exit")
 
+    a = sub.add_parser("add", help="add a contextual entity (remote reference) by PID — person, publication, software, funder, remote data")
+    a.add_argument("kind", help="contextual kind from the profile (creator, publication, software, funder, remote_data, …)")
+    a.add_argument("reference", help="the identifier: DOI / ORCID / ROR / URL")
+    a.add_argument("--repo", default=".", help="repository directory (default: .)")
+    a.add_argument("--name", help="optional name (otherwise filled by enrich)")
+
     s = sub.add_parser("seed", help="author the ROOT entity in the crate (== `describe .`) — the one-shot bootstrap")
     s.add_argument("--repo", default=".", help="repository directory (default: .)")
     s.add_argument("--name", help="title")
     s.add_argument("--description", help="short description")
+    s.add_argument("--license", help="SPDX id or URL (shortcut for --set license=…)")
     s.add_argument("--author", action="append", dest="authors", metavar="ORCID|\"Family, Given\"",
                    help="creator(s) of the dataset (repeatable)")
     s.add_argument("--set", action="append", dest="sets", metavar="property=value",
-                   help="set any root property, e.g. --set license=CC-BY-4.0 --set keywords=a,b")
+                   help="set any root property, e.g. --set keywords=a,b")
 
     mf = sub.add_parser("mode-file", help="generate a Crate-O mode file (web editor config) from the profile")
     mf.add_argument("-o", "--out", required=True, help="output path for the mode file json")
@@ -93,10 +103,11 @@ def main(argv=None):
 
     if args.cmd == "issue-form":
         from .profile import load_profile
-        from .issue_form import write_issue_form
+        from .issue_form import write_form
         import os
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-        out = write_issue_form(load_profile(args.repo), args.out, dirs=args.dirs, title=args.title)
+        out = write_form(load_profile(args.repo), args.out, kind=args.kind,
+                         dirs=args.dirs, title=args.title)
         print(f"wrote {out}", file=sys.stderr)
         return 0
 
@@ -124,8 +135,17 @@ def main(argv=None):
 
     if args.cmd == "seed":
         from .describe import edit_entity
+        sets = list(args.sets or [])
+        if args.license:
+            sets.append(f"license={args.license}")
         result = edit_entity(args.repo, ".", name=args.name, description=args.description,
-                             authors=args.authors, sets=args.sets)
+                             authors=args.authors, sets=sets or None)
+        print(json.dumps(result, indent=2), file=sys.stderr)
+        return 0
+
+    if args.cmd == "add":
+        from .contextual import add_contextual
+        result = add_contextual(args.repo, args.kind, args.reference, name=args.name)
         print(json.dumps(result, indent=2), file=sys.stderr)
         return 0
 

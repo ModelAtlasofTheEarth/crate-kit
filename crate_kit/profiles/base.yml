@@ -30,11 +30,48 @@ root:
 payload:
   backends: [git, zenodo, url]
 
+# Contextual entities = "remote" things, added BY REFERENCE (a PID), linked to the root, then
+# materialised by `enrich`. (Local things are data entities — files/folders.) Each kind declares
+# its @type, the root property it links through, an id hint, and which enrich resolver fills it.
+# This is the references crosswalk as config; the "Add a contextual entity" form is generated from it.
+contextual:
+  creator:
+    label: "Creator / author (a person)"
+    type: Person
+    link: creator
+    id_hint: "ORCID iD, e.g. 0000-0002-1825-0097"
+    enrich: author
+  publication:
+    label: "Publication (article / preprint)"
+    type: ScholarlyArticle
+    link: citation
+    id_hint: "DOI, e.g. 10.1038/s41586-020-2649-2"
+    enrich: publication
+  software:
+    label: "Software used"
+    type: SoftwareApplication
+    link: mentions
+    id_hint: "DOI or homepage URL"
+    enrich: software        # resolver not built yet -> stays a stub until then
+  funder:
+    label: "Funder / organisation"
+    type: Organization
+    link: funder
+    id_hint: "ROR id or URL"
+    enrich: organization    # resolver not built yet -> stays a stub until then
+  remote_data:
+    label: "Remote data payload (large data hosted elsewhere)"
+    type: Dataset
+    link: distribution
+    id_hint: "DOI or URL (Zenodo, NCI, …)"
+    enrich: null
+
 # Enrichment keep-lists (generic PIDs: Crossref / ORCID / ROR).
 enrich:
   publication:  { keep: [name, author, datePublished, url] }
   author:       { keep: [givenName, familyName, "@id", affiliation] }
   organization: { keep: [name, "@id"] }
+  software:     { keep: [name, url, softwareVersion] }
 
 # Generic catalogue gate.
 requires_for_website:

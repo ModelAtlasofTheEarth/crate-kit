@@ -1,11 +1,11 @@
 # Reusable workflow. Model repos call it:
-#   jobs: { mate: { uses: ModelAtlasofTheEarth/mate-toolkit/.github/workflows/build.yml@v0 } }
+#   jobs: { crate: { uses: ModelAtlasofTheEarth/crate-kit/.github/workflows/build.yml@v0 } }
 # Runs against the CALLER's checkout. The toolkit is installed by the caller's environment.yml
 # (single pinned-version source), so local and CI behave identically.
 #
 # If `issue_body` is passed (from an `on: issues` caller), it first writes those answers into
-# the crate via `mate from-issue`; then build/validate/render run as usual.
-name: build-mate-model
+# the crate via `crate from-issue`; then build/validate/render run as usual.
+name: build-crate
 
 on:
   workflow_call:
@@ -50,44 +50,44 @@ jobs:
         run: |
           printf '%s' "$ISSUE_BODY" > /tmp/issue.md
           # One generic edit-entity form (target defaults to root). --print-command writes the
-          # equivalent `mate` command to stdout; capture it for the confirmation comment.
-          mate from-issue . --body /tmp/issue.md --print-command > /tmp/mate_command.txt || true
+          # equivalent `crate` command to stdout; capture it for the confirmation comment.
+          crate from-issue . --body /tmp/issue.md --print-command > /tmp/crate_command.txt || true
 
       - name: build + validate
         shell: bash -el {0}
         run: |
-          mate build .
-          mate validate .
+          crate build .
+          crate validate .
 
       - name: enrich PIDs (best-effort; never fails the build)
         shell: bash -el {0}
-        run: mate enrich . || echo "enrich skipped"
+        run: crate enrich . || echo "enrich skipped"
 
       - name: render
         if: ${{ inputs.render }}
         shell: bash -el {0}
-        run: mate render . -o _site
+        run: crate render . -o _site
 
-      - name: refresh edit-entity issue form (live folder dropdown)
+      - name: refresh data-entity issue form (live folder dropdown)
         # Only for repos that opt in by shipping the form. First-level, non-hidden directories
         # become the path-dropdown options (clamped to depth 1 by design), so the picker tracks
-        # the repo. Regenerated from the repo's own profile; git-diff means it only re-commits
-        # when the folder set actually changes.
-        if: ${{ hashFiles('.github/ISSUE_TEMPLATE/edit-entity.yml') != '' }}
+        # the repo. The Configure (root) form is static — it has no path. Git-diff means this only
+        # re-commits when the folder set actually changes.
+        if: ${{ hashFiles('.github/ISSUE_TEMPLATE/edit-data-entity.yml') != '' }}
         shell: bash -el {0}
         run: |
           args=()
           while IFS= read -r d; do [ -n "$d" ] && args+=(--dir "$d/"); done < <(
             find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' | sed 's|^\./||' | sort)
-          mate issue-form --repo . --out .github/ISSUE_TEMPLATE/edit-entity.yml --title "[edit] " "${args[@]}"
+          crate issue-form --repo . --kind data --out .github/ISSUE_TEMPLATE/edit-data-entity.yml --title "[edit] " "${args[@]}"
 
       - name: commit regenerated crate (+ refreshed form)
         shell: bash -el {0}
         run: |
-          git config user.name  "mate-bot"
-          git config user.email "mate-bot@users.noreply.github.com"
+          git config user.name  "crate-bot"
+          git config user.email "crate-bot@users.noreply.github.com"
           git add ro-crate-metadata.json
-          git add .github/ISSUE_TEMPLATE/edit-entity.yml 2>/dev/null || true
+          git add .github/ISSUE_TEMPLATE/edit-data-entity.yml 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "nothing to commit"
           else
@@ -100,7 +100,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          CMD=$(cat /tmp/mate_command.txt 2>/dev/null || true)
+          CMD=$(cat /tmp/crate_command.txt 2>/dev/null || true)
           {
             echo "✅ Applied to \`ro-crate-metadata.json\` — the single source of truth. Edit the crate (CLI / Crate-O), not this issue."
             if [ -n "$CMD" ]; then

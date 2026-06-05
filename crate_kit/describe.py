@@ -140,7 +140,7 @@ def command_for(target, type_=None, name=None, description=None, authors=None, s
     """Render an edit-intent as the equivalent `mate` command — the CLI-teaching string shown in
     the issue confirmation comment. Faithful to the CLI flags so it can be copy-pasted."""
     is_root = target in (".", "./", "", None)
-    parts = ["mate", "seed"] if is_root else ["mate", "describe", shlex.quote(target)]
+    parts = ["crate", "seed"] if is_root else ["crate", "describe", shlex.quote(target)]
     if type_:
         parts += ["--type", type_]
     if name:
