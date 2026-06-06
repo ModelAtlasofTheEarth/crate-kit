@@ -33,9 +33,9 @@ _INTRO_CONTEXTUAL = (
     "dataset, and `enrich` fills in the details. *(Local things — files/folders — are data "
     "entities; use the other forms for those.)*")
 
-_CONFIGURE_DEFAULTS = {"name": "Configure dataset (the whole crate)", "title": "[configure] ", "labels": ["crate-edit"]}
-_DATA_DEFAULTS = {"name": "Edit a data entity (a local file/folder)", "title": "[edit] ", "labels": ["crate-edit"]}
-_CONTEXTUAL_DEFAULTS = {"name": "Add a contextual entity (a remote reference)", "title": "[add] ", "labels": ["crate-edit"]}
+_CONFIGURE_DEFAULTS = {"name": "Configure dataset (the whole crate)", "title": "[configure crate] ", "labels": ["crate-edit"]}
+_DATA_DEFAULTS = {"name": "Edit a data entity (a local file/folder)", "title": "[edit data] ", "labels": ["crate-edit"]}
+_CONTEXTUAL_DEFAULTS = {"name": "Add a contextual entity (a remote reference)", "title": "[add reference] ", "labels": ["crate-edit"]}
 
 # Universal fields for ANY non-root data entity. Type-specific depth (programmingLanguage,
 # variableMeasured, …) is Crate-O's job — a static form can't reveal it per chosen type.

@@ -79,7 +79,7 @@ jobs:
           args=()
           while IFS= read -r d; do [ -n "$d" ] && args+=(--dir "$d/"); done < <(
             find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' | sed 's|^\./||' | sort)
-          crate issue-form --repo . --kind data --out .github/ISSUE_TEMPLATE/edit-data-entity.yml --title "[edit] " "${args[@]}"
+          crate issue-form --repo . --kind data --out .github/ISSUE_TEMPLATE/edit-data-entity.yml --title "[edit data] " "${args[@]}"
 
       - name: commit regenerated crate (+ refreshed form)
         shell: bash -el {0}
