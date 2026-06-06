@@ -77,13 +77,10 @@ def _root_specs(profile):
 
 
 def _path_spec(dirs):
-    # LABEL must be identical whether dropdown (form has live dirs) or text (parser, no dirs) —
-    # the parser keys on labels, so they can't drift.
-    if dirs:
-        return {"id": "path", "role": "path", "input": "dropdown", "required": False,
-                "label": "Which entity to edit", "options": [_ROOT_OPT] + list(dirs)}
-    return {"id": "path", "role": "path", "input": "text", "required": False,
-            "label": "Which entity to edit", "help": "folder/file path; blank = the dataset root"}
+    # Always a dropdown — folders are DERIVED from the repo by the build's live refresh, never
+    # hardcoded. Empty repo = just the root; folders appear after the first build finds them.
+    return {"id": "path", "role": "path", "input": "dropdown", "required": False,
+            "label": "Which entity to edit", "options": [_ROOT_OPT] + list(dirs or [])}
 
 
 def _type_spec(profile):
