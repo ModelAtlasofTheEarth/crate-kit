@@ -60,7 +60,19 @@ def _t_people(v, doc):
     return refs or None
 
 
-TRANSFORMS = {"join": _t_join, "join_date": _t_join_date, "first": _t_first, "people": _t_people}
+def _t_id_ref(v, doc):
+    return {"@id": v} if v else None
+
+
+def _t_striptags(v, doc):
+    if not v:
+        return None
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", v)).strip()   # drop HTML/JATS tags
+    return text or None
+
+
+TRANSFORMS = {"join": _t_join, "join_date": _t_join_date, "first": _t_first, "people": _t_people,
+              "id_ref": _t_id_ref, "striptags": _t_striptags}
 
 
 def _pid(entity_id, cfg):

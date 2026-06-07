@@ -92,6 +92,10 @@ enrich:
       datePublished: { path: 'message.published."date-parts"[0]', transform: join_date }
       url:           "message.URL"
       author:        { path: "message.author", transform: people }
+      isPartOf:      'message."container-title"[0]'                       # journal
+      publisher:     "message.publisher"
+      pagination:    "message.page"
+      license:       { path: "message.license[0].URL", transform: id_ref }
   organization:                                 # ROR (v2) -> Organization (funders)
     match: "ror.org"
     url: "https://api.ror.org/v2/organizations/{id}"
@@ -106,6 +110,9 @@ enrich:
       name:            "metadata.title"
       softwareVersion: "metadata.version"
       url:             "links.html"
+      description:     { path: "metadata.description", transform: striptags }
+      license:         "metadata.license.id"
+      keywords:        "metadata.keywords"
 
 # Generic catalogue gate.
 requires_for_website:
