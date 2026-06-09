@@ -156,3 +156,24 @@ component_types:
       description:          { label: "Description", input: textarea }
       url:                  { label: "URL", input: text }
       author:               { label: "Author(s)", input: people, many: true }
+
+# ── Website content contract (TARGET_ARCHITECTURE.md §21) ──
+# `crate website` projects the crate onto these slots → a flat, portable website.json (what a
+# Quarto/any static site consumes). A slot draws from: a root `from:` property; all entities of a
+# `type:`; or all entities tagged with a `role:` (additionalType). `project:` shapes each resolved
+# entity — a property name, "@id", or a {key: prop} map. `single: true` takes the first. This is a
+# CONTENT contract only — no layout/order (that's the presentation layer's call).
+website:
+  title:        { from: name }
+  description:  { from: description }
+  abstract:     { from: abstract }
+  doi:          { from: citation, project: "@id", single: true }
+  license:      { from: license, project: "@id", single: true }
+  keywords:     { from: keywords }
+  creators:     { from: creator, project: name }
+  publication:  { type: ScholarlyArticle, single: true, project: { title: name, url: url, date: datePublished } }
+  software:     { type: SoftwareApplication, project: { name: name, url: url, version: softwareVersion } }
+  funders:      { from: funder, project: { name: name, url: url } }
+  graphical_abstract: { role: graphical-abstract, single: true, project: { url: "@id", caption: caption } }
+  setup_diagram:      { role: model-setup-diagram, single: true, project: { url: "@id", caption: caption } }
+  figures:      { role: figure, project: { url: "@id", caption: caption } }

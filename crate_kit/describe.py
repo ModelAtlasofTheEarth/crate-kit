@@ -136,6 +136,54 @@ def describe(repo_dir, target, **kw):
     return edit_entity(repo_dir, target, **kw)
 
 
+def _add_to_list(entity, key, val):
+    cur = entity.get(key)
+    lst = cur if isinstance(cur, list) else ([cur] if cur else [])
+    if val not in lst:
+        lst.append(val)
+    entity[key] = lst[0] if len(lst) == 1 else lst
+
+
+def set_role(repo_dir, target, role, type_=None, caption=None):
+    """Tag an entity with a website ROLE (`additionalType`) — e.g. graphical-abstract — keeping its
+    structural @type. If the profile's website schema marks the role `single`, the tag is MOVED off
+    any other holder (cardinality enforced by the verb). Optionally set a more-specific @type
+    (ImageObject) and a caption."""
+    repo_dir = Path(repo_dir).resolve()
+    profile = load_profile(repo_dir)
+    crate_path = repo_dir / "ro-crate-metadata.json"
+    build_crate(repo_dir, out_path=str(crate_path), merge=True)
+    doc = json.loads(crate_path.read_text())
+
+    tid = _resolve_id(doc, target)
+    if tid is None:
+        return {"error": f"no entity for path '{target}' in the crate"}
+    entity = next(e for e in doc["@graph"] if e.get("@id") == tid)
+
+    if type_:
+        _add_to_list(entity, "@type", type_)
+    if caption:
+        entity["caption"] = caption
+
+    single = any(s.get("role") == role and s.get("single")
+                 for s in (profile.get("website", {}) or {}).values())
+    if single:                                     # move the tag off any other holder
+        for e in doc["@graph"]:
+            if e is entity:
+                continue
+            at = e.get("additionalType")
+            if at and role in (at if isinstance(at, list) else [at]):
+                rest = [x for x in (at if isinstance(at, list) else [at]) if x != role]
+                if rest:
+                    e["additionalType"] = rest[0] if len(rest) == 1 else rest
+                else:
+                    e.pop("additionalType", None)
+    _add_to_list(entity, "additionalType", role)
+
+    crate_path.write_text(json.dumps(doc, indent=2))
+    return {"roled": tid, "role": role, "single": bool(single), "type": entity.get("@type")}
+
+
 def command_for(target, type_=None, name=None, description=None, authors=None, sets=None):
     """Render an edit-intent as the equivalent `mate` command — the CLI-teaching string shown in
     the issue confirmation comment. Faithful to the CLI flags so it can be copy-pasted."""

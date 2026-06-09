@@ -26,6 +26,18 @@ def main(argv=None):
                    help="seed root metadata from an old-engine .metadata_trail/issue_dict.json")
     r.add_argument("--no-quarto", action="store_true", help="write model.qmd but do not run quarto")
 
+    w = sub.add_parser("website", help="resolve the crate against the profile's website: schema -> a flat, portable website.json")
+    w.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
+    w.add_argument("-o", "--out", help="write website.json here (default: stdout)")
+    w.add_argument("--no-build", action="store_true", help="resolve the existing crate without rebuilding first")
+
+    rl = sub.add_parser("role", help="tag an entity with a website role (additionalType), e.g. graphical-abstract")
+    rl.add_argument("target", help="path to the file/folder to tag")
+    rl.add_argument("--as", dest="role", required=True, metavar="ROLE", help="the role, e.g. graphical-abstract")
+    rl.add_argument("--repo", default=".", help="repository directory (default: .)")
+    rl.add_argument("--type", dest="type_", help="also set a more-specific @type, e.g. ImageObject")
+    rl.add_argument("--caption", help="caption for the asset")
+
     v = sub.add_parser("validate", help="check a repo's crate meets the minimum M@TE model requirements")
     v.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
     v.add_argument("--reverse-engineer", action="store_true",
@@ -98,6 +110,18 @@ def main(argv=None):
     if args.cmd == "render":
         result = render_repo(args.repo, args.out, reverse_engineer=args.reverse_engineer,
                              run_quarto=not args.no_quarto)
+        print(json.dumps(result, indent=2), file=sys.stderr)
+        return 0
+
+    if args.cmd == "website":
+        from .website import resolve_website
+        site = resolve_website(args.repo, out_path=args.out, build=not args.no_build)
+        print(json.dumps(site, indent=2))
+        return 0
+
+    if args.cmd == "role":
+        from .describe import set_role
+        result = set_role(args.repo, args.target, args.role, type_=args.type_, caption=args.caption)
         print(json.dumps(result, indent=2), file=sys.stderr)
         return 0
 
