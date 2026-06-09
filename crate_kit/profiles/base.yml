@@ -172,7 +172,7 @@ website:
   keywords:     { from: keywords }
   creators:     { from: creator, project: name }
   publication:  { type: ScholarlyArticle, single: true, project: { title: name, url: url, date: datePublished } }
-  software:     { type: SoftwareApplication, project: { name: name, url: url, version: softwareVersion } }
+  software:     { type: [SoftwareApplication, SoftwareSourceCode], project: { name: name, url: url, version: softwareVersion } }
   funders:      { from: funder, project: { name: name, url: url } }
   graphical_abstract: { role: graphical-abstract, single: true, project: { url: "@id", caption: caption } }
   setup_diagram:      { role: model-setup-diagram, single: true, project: { url: "@id", caption: caption } }

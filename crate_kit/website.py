@@ -45,6 +45,8 @@ def _abs(v, raw_base):
 
 def _val(entity, prop, raw_base):
     v = entity.get(prop)
+    if prop == "name" and not v:                    # fall back to given+family (older Person shape)
+        v = " ".join(x for x in (entity.get("givenName"), entity.get("familyName")) if x) or None
     return _abs(v, raw_base) if prop == "@id" else v
 
 
@@ -79,7 +81,8 @@ def _slot(doc, by_id, root, spec, raw_base):
         return out
 
     if "type" in spec:
-        ents = [e for e in doc["@graph"] if spec["type"] in _types(e)]
+        want = spec["type"] if isinstance(spec["type"], list) else [spec["type"]]
+        ents = [e for e in doc["@graph"] if any(t in _types(e) for t in want)]
     elif "role" in spec:
         ents = [e for e in doc["@graph"] if spec["role"] in _atypes(e)]
     else:
