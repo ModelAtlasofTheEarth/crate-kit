@@ -9,26 +9,7 @@ from urllib.parse import unquote
 
 from .build_crate import build_crate
 from .profile import load_profile
-
-
-def _satisfied(req, root, by_id, graph):
-    """Is a single requirement met? A requirement is one of:
-    - {"any": [...]} / {"all": [...]}  — nested combinators
-    - "external_payload"               — a declared external payload entity exists
-    - "model_output_data/" (ends "/")  — that dataset/directory entity exists
-    - "name" / "license" / ...         — a root property is present
-    """
-    if isinstance(req, dict):
-        if "any" in req:
-            return any(_satisfied(r, root, by_id, graph) for r in req["any"])
-        if "all" in req:
-            return all(_satisfied(r, root, by_id, graph) for r in req["all"])
-        return False
-    if req == "external_payload":
-        return any(e.get("additionalType") == "ExternalPayload" for e in graph)
-    if isinstance(req, str) and req.endswith("/"):
-        return req in by_id
-    return bool(root.get(req))
+from .vocab import load_vocab
 
 
 def validate(repo_dir, reverse_engineer=False, profile=None, strict=False):
@@ -61,12 +42,37 @@ def validate(repo_dir, reverse_engineer=False, profile=None, strict=False):
                 readiness.append(f"missing required field `{fname}` (root.{prop})")
                 reported.add(prop)
 
-    # 2) website-eligibility gate — from the profile [readiness]
-    for req in profile.get("requires_for_website", []) or []:
-        if isinstance(req, str) and req in reported:
-            continue  # already reported as a missing required field
-        if not _satisfied(req, root, by_id, graph):
-            readiness.append(f"not website-eligible: requires {req!r}")
+    # 2) catalogue-readiness tiers — from the profile's `readiness:` block (falls back to the
+    #    legacy `requires_for_website` as the required tier). REQUIRED unmet → readiness (soft/strict
+    #    as below); ENCOURAGED unmet → an informational warning (never gates the build).
+    from .readiness import evaluate
+    tiers = evaluate(profile, graph, by_id, root)
+    for item in tiers["required"]:
+        pred = item["predicate"]
+        # a {property: X} or bare-string predicate that's already flagged as a missing required root
+        # field shouldn't be double-reported.
+        key = pred.get("property") if isinstance(pred, dict) else (pred if isinstance(pred, str) else None)
+        if key and key in reported:
+            continue
+        if not item["met"]:
+            readiness.append(f"not catalogue-eligible: needs {item['label']}")
+    for item in tiers["encouraged"]:
+        if not item["met"]:
+            warnings.append(f"encouraged (a thin page without it): {item['label']}")
+
+    # 2b) role cardinality — a `single` vocabulary role (graphical-abstract, model-setup-diagram)
+    #     must not be carried by more than one entity. Structural error (the crate is inconsistent;
+    #     the website can't pick a hero). Only known terms with single cardinality are checked.
+    vocab = load_vocab(profile)
+    for term in vocab.values():
+        if not term.single:
+            continue
+        holders = [e.get("@id") for e in graph
+                   if term.type_value in ([e["additionalType"]] if isinstance(e.get("additionalType"), str)
+                                           else (e.get("additionalType") or []))]
+        if len(holders) > 1:
+            errors.append(f"role `{term.name}` is single-use but tags {len(holders)} entities: "
+                          f"{', '.join(holders)}")
 
     # 3) referenced local files must exist [structural — always hard]. The @id is URL-encoded
     #    per RO-Crate (a space becomes %20, etc.), so DECODE before hitting the filesystem.

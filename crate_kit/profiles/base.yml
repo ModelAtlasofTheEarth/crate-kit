@@ -10,10 +10,26 @@
 profile: base
 version: 0
 
-# schema.org only (+ the RO-Crate context). PINNED — never fetched live at build time.
+# Vocabularies this profile imports (loaded by crate_kit/vocab.py). Terms become available as
+# `additionalType` roles to the role verb, the issue form, and validate. `communication` supplies
+# the website-asset roles (graphical-abstract, model-setup-diagram, figure, …) the website: block
+# below references. Drop a vocab here to opt a discipline into its terms; the engine itself is generic.
+imports:
+  - communication
+
+# Internal enrich: derive metadata from the repo's own content (gap-fill, best-effort). `license`
+# reads a LICENSE/COPYING file → an SPDX id on the root, so a repo that already has a license file
+# doesn't have to re-type it. (`crate enrich --internal`.)
+internal_enrich:
+  - license
+
+# Pinned JSON-LD contexts — declared in the crate's @context, never fetched live at build time.
+# CodeMeta is added so the software fields below (buildInstructions, developmentStatus, …) resolve
+# to real URIs. A discipline adds its own context the same way (e.g. a biology profile → Bioschemas).
 context:
   - https://w3id.org/ro/crate/1.1/context
   - https://schema.org/
+  - https://doi.org/10.5063/schema/codemeta-2.0
 
 # Root entity (RO-Crate requires a schema.org Dataset). Universal fields only.
 root:
@@ -25,6 +41,10 @@ root:
     creators:    { property: creator,      required: true,  input: people, many: true, label: "Creator(s) — ORCID iD or 'Family, Given'", enrich: author }
     keywords:    { property: keywords,     required: false, input: list, many: true, label: "Keywords" }
     publication: { property: citation,     required: false, input: text,     label: "Related publication (DOI)", enrich: publication }
+
+# Website-asset whitelist: which file types the "Tag website content" form offers (images /
+# animations destined for the page). Policy, not mechanism — a discipline tunes this list.
+website_asset_types: [.png, .jpg, .jpeg, .gif, .svg, .webp, .tif, .tiff, .mp4, .webm, .mov]
 
 # Generic external-payload backends (no discipline-specific stores).
 payload:
@@ -49,7 +69,15 @@ contextual:
     enrich: publication
   software:
     label: "Software used"
-    type: SoftwareApplication
+    type: SoftwareApplication       # default; refined by detect_type below
+    # detect_type = declarative @type refinement (the engine just executes these rules — no domain
+    # code). A source-host URL is source code; everything else stays the default application. A
+    # different discipline writes its own rules here (e.g. a specimen PID → BioSample).
+    detect_type:
+      - { match: "github.com",    type: SoftwareSourceCode }
+      - { match: "gitlab.com",    type: SoftwareSourceCode }
+      - { match: "bitbucket.org", type: SoftwareSourceCode }
+      - { match: "codeberg.org",  type: SoftwareSourceCode }
     link: mentions
     id_hint: "DOI or homepage URL"
     enrich: software        # resolver not built yet -> stays a stub until then
@@ -114,11 +142,29 @@ enrich:
       license:         "metadata.license.id"
       keywords:        "metadata.keywords"
 
-# Generic catalogue gate.
+# Generic catalogue gate (legacy flat list — superseded by `readiness:` below, kept for reference).
 requires_for_website:
   - name
   - license
   - creator
+
+# ── Catalogue readiness — the tiered traffic-light (crate readiness; consumed by validate) ──
+# BASE is the naked, generic research-object crate: its required tier is just the schema.org Dataset
+# essentials (title + creators + license). Asset requirements (≥1 image, code-or-data, an OPEN
+# license) are DISCIPLINE POLICY and live in a profile like mate-geoscience — base only *demonstrates*
+# the machinery (the asset roles sit in `encouraged`, never gating). Each item = a predicate
+# ({property|type|role|any|all}) + a human `label` + optional `action_role` (a fix-it link pre-fill).
+# See memory/minimum-asset-floor.md.
+readiness:
+  required:
+    - { property: name,    label: "A title" }
+    - { property: license, label: "A license" }
+    - { property: creator, label: "At least one creator" }
+  encouraged:
+    - { type: ImageObject, label: "At least one image (any figure or screenshot)", action_role: figure }
+    - { role: graphical-abstract, label: "A graphical abstract (the ideal hero image)", action_role: graphical-abstract }
+    - { property: description,    label: "A plain-language description" }
+    - { role: model-setup-diagram, label: "A model-setup diagram", action_role: model-setup-diagram }
 
 # Component types — schema.org ONLY (no CodeMeta terms like buildInstructions).
 component_types:
@@ -129,20 +175,35 @@ component_types:
       variableMeasured:     { label: "Variables", input: list }
       measurementTechnique: { label: "How it was produced", input: text }
       contentSize:          { label: "Total size", input: text }
+  # Software types carry schema.org fields + CodeMeta extensions (tagged `vocab: codemeta`). CodeMeta
+  # is schema.org-for-software plus ~a dozen extra terms; it's a FIELD vocabulary, so it rides this
+  # component_types mechanism (NOT additionalType). Any discipline extends the same way.
   SoftwareSourceCode:
     label: "Software source code"
+    form: true            # generate an "Edit a software source code entity" form when one exists
     fields:
       programmingLanguage:  { label: "Language(s)", input: list }
       runtimePlatform:      { label: "Runtime platform", input: text }
       codeRepository:       { label: "Source repository", input: text }
+      softwareRequirements: { label: "Requirements / dependencies", input: text }
       targetProduct:        { label: "What it produces / runs as", input: text }
+      buildInstructions:    { label: "Build instructions", input: text, help: "text, or a script e.g. build.sh", vocab: codemeta }
+      developmentStatus:    { label: "Development status", input: text, help: "e.g. active, inactive, unsupported (repostatus.org)", vocab: codemeta }
+      issueTracker:         { label: "Issue tracker URL", input: text, vocab: codemeta }
+      readme:               { label: "README URL", input: text, vocab: codemeta }
+      referencePublication: { label: "Reference publication (DOI)", input: text, vocab: codemeta }
   SoftwareApplication:
     label: "Software application"
+    form: true
     fields:
       softwareVersion:      { label: "Version", input: text }
       operatingSystem:      { label: "Operating system", input: text }
       applicationCategory:  { label: "Category", input: text }
       url:                  { label: "Homepage / DOI", input: text }
+      softwareRequirements: { label: "Requirements / dependencies", input: text }
+      downloadUrl:          { label: "Download URL", input: text }
+      developmentStatus:    { label: "Development status", input: text, vocab: codemeta }
+      referencePublication: { label: "Reference publication (DOI)", input: text, vocab: codemeta }
   ImageObject:
     label: "Image / figure"
     fields:
@@ -174,6 +235,8 @@ website:
   publication:  { type: ScholarlyArticle, single: true, project: { title: name, url: url, date: datePublished } }
   software:     { type: [SoftwareApplication, SoftwareSourceCode], project: { name: name, url: url, version: softwareVersion } }
   funders:      { from: funder, project: { name: name, url: url } }
-  graphical_abstract: { role: graphical-abstract, single: true, project: { url: "@id", caption: caption } }
+  # hero rule: the tagged graphical-abstract if present, ELSE fall back to any image — so a thin
+  # contributor who tagged a single plain figure still gets a card hero (memory/minimum-asset-floor).
+  graphical_abstract: { role: graphical-abstract, single: true, project: { url: "@id", caption: caption }, fallback: { type: ImageObject } }
   setup_diagram:      { role: model-setup-diagram, single: true, project: { url: "@id", caption: caption } }
   figures:      { role: figure, project: { url: "@id", caption: caption } }

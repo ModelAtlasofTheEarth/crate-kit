@@ -11,6 +11,9 @@ dependencies = ["rocrate", "pyyaml", "pathspec", "jmespath"]
 # NB: quarto is NOT a pip package — it comes from conda-forge (see environment.yml)
 # or the quarto-dev/quarto-actions/setup action in CI. Only `crate render` needs it.
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [project.scripts]
 crate = "crate_kit.cli:main"
 
@@ -24,4 +27,4 @@ validate = "crate_kit.validate:validate"
 packages = ["crate_kit"]
 
 [tool.setuptools.package-data]
-crate_kit = ["profiles/*.yml", "profiles/*.md"]
+crate_kit = ["profiles/*.yml", "profiles/*.md", "vocabularies/*.yml"]

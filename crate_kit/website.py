@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .build_crate import build_crate
 from .profile import load_profile
+from .vocab import load_vocab
 
 
 def _as_list(v):
@@ -60,7 +61,7 @@ def _project(entity, proj, raw_base):
     return {k: _val(entity, p, raw_base) for k, p in proj.items()}
 
 
-def _slot(doc, by_id, root, spec, raw_base):
+def _slot(doc, by_id, root, spec, raw_base, role_value=None):
     proj = spec.get("project")
     single = spec.get("single")
 
@@ -84,9 +85,20 @@ def _slot(doc, by_id, root, spec, raw_base):
         want = spec["type"] if isinstance(spec["type"], list) else [spec["type"]]
         ents = [e for e in doc["@graph"] if any(t in _types(e) for t in want)]
     elif "role" in spec:
-        ents = [e for e in doc["@graph"] if spec["role"] in _atypes(e)]
+        # the slot names a vocab TERM (e.g. `figure`); match on what that term actually writes to
+        # additionalType (a loadable URI like doco:Figure, else the local term name).
+        want = (role_value or {}).get(spec["role"], spec["role"])
+        ents = [e for e in doc["@graph"] if want in _atypes(e)]
     else:
-        return None
+        ents = []
+
+    # Fallback: if the primary source resolved nothing and a `fallback` source is declared, resolve
+    # that instead (the hero rule: graphical-abstract if tagged, ELSE any image). The fallback
+    # inherits this slot's project/single so the shape is identical.
+    if not ents and spec.get("fallback"):
+        fb = {**spec["fallback"], "project": proj, "single": single}
+        return _slot(doc, by_id, root, fb, raw_base, role_value)
+
     out = [_project(e, proj, raw_base) for e in ents]
     if single:
         return out[0] if out else None
@@ -105,12 +117,14 @@ def resolve_website(repo_dir, out_path=None, build=True):
     doc = json.loads(crate_path.read_text())
     by_id = {e.get("@id"): e for e in doc["@graph"]}
     root = by_id.get("./", {})
-    schema = (load_profile(repo_dir).get("website", {}) or {})
+    profile = load_profile(repo_dir)
+    schema = (profile.get("website", {}) or {})
     raw_base = _raw_base(root)
+    role_value = {name: t.type_value for name, t in load_vocab(profile).items()}
 
     site = {}
     for slot, spec in schema.items():
-        val = _slot(doc, by_id, root, spec, raw_base)
+        val = _slot(doc, by_id, root, spec, raw_base, role_value)
         if val not in (None, "", []):
             site[slot] = val
 

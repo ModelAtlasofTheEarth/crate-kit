@@ -13,6 +13,16 @@
 profile: mate-geoscience
 version: 0
 
+# Imported vocabularies (loaded by crate_kit/vocab.py): their terms become `additionalType` roles
+# offered/validated by the role verb, the issue form, and validate. See mate-vocabularies.
+imports:
+  - communication
+
+# Internal enrich (gap-fill, best-effort): derive metadata from repo content. `license` reads a
+# LICENSE/COPYING file → SPDX on the root — directly helps clear the open-license floor.
+internal_enrich:
+  - license
+
 # Authoritative, PINNED contexts. Vendored — never fetched live at build time (v1's mistake).
 context:
   - https://w3id.org/ro/crate/1.1/context
@@ -84,10 +94,50 @@ datasets:
     role: figures
     label: "Figures"
 
+# Website-asset whitelist for the "Tag website content" form — the image/animation file types
+# destined for a model's page. MATE's own list (tune here without touching the engine): common
+# raster + vector stills, plus the web-playable movie formats for simulation animations.
+website_asset_types: [.png, .jpg, .jpeg, .webp, .gif, .svg, .tif, .tiff, .mp4, .webm, .mov, .ogv]
+
 # ── External data payload (link-payload) ─────────────────────────────────────
 payload:
   backends: [zenodo, nci, url]
   default_backs: model_output_data/
+
+# ── Contextual entities ("remote" things added BY REFERENCE) — drives `crate add` + form 3 ──
+# Without this block `crate add` has no kinds. remote_data is what satisfies the open-PID floor
+# (open_pid_hosts), so the geoscience floor depends on this being here.
+contextual:
+  creator:
+    label: "Creator / author (a person)"
+    type: Person
+    link: creator
+    id_hint: "ORCID iD, e.g. 0000-0002-1825-0097"
+    enrich: author
+  publication:
+    label: "Publication (article / preprint)"
+    type: ScholarlyArticle
+    link: citation
+    id_hint: "DOI, e.g. 10.1038/s41586-020-2649-2"
+    enrich: publication
+  software:
+    label: "Software used"
+    type: SoftwareApplication
+    link: mentions
+    id_hint: "DOI or homepage URL"
+    enrich: software
+  funder:
+    label: "Funder / organisation"
+    type: Organization
+    link: funder
+    id_hint: "ROR id or URL"
+    enrich: organization
+  remote_data:
+    label: "Remote data payload (large outputs hosted on NCI / Zenodo)"
+    type: Dataset
+    link: distribution
+    id_hint: "a DOI / Zenodo record / NCI URL (must be an open, resolvable PID)"
+    enrich: null
 
 # ── Enrichment keep-lists ────────────────────────────────────────────────────
 # What to RETAIN from each resolved PID. Best-effort, never fatal. Answers
@@ -99,12 +149,39 @@ enrich:
 
 # ── The admission gate (consumed by `mate validate`, NOT by render) ──────────
 # Render is permissive; the website bar is the validator. A model is catalogue-eligible
-# only if its crate satisfies these.
+# only if its crate satisfies these. (Legacy flat list — superseded by `readiness:` below.)
 requires_for_website:
   - name
   - license
   - creator
   - any: ["model_code_inputs/", external_payload]   # must have code OR a declared payload
+
+# ── Catalogue readiness — tiered traffic-light (crate readiness; consumed by validate) ───
+# Floor = title + creators + OPEN license + ≥1 image of any kind + CODE-OR-(open)-DATA (the v1
+# either/or: at minimum one of model code / an openly-archived data payload, ideally both).
+# The principle: the platform grants visibility, which must be EARNED by an open contribution —
+# an image + a publication is presence without substance. See memory/minimum-asset-floor.md.
+
+# Open-license allowlist (the floor requires one of these; `(other URL)` does NOT qualify — that's
+# the loophole closed). SPDX ids.
+open_licenses: [CC-BY-4.0, CC-BY-SA-4.0, CC0-1.0, AGPL-3.0, GPL-3.0, LGPL-3.0, MPL-2.0, Apache-2.0, MIT]
+
+# Hosts accepted as a "resolvable open PID" for a remote data payload — a declared payload must
+# point at one of these (a DOI / Zenodo / NCI), not just any URL. (We check presence of an open
+# pointer; we deliberately do NOT police substance beyond this — registry review handles the rest.)
+open_pid_hosts: [doi.org, zenodo.org, nci.org.au]
+
+readiness:
+  required:
+    - { property: name,    label: "A model title" }
+    - { open_license: true, label: "An open license (CC-BY, CC0, MIT, GPL, Apache, …)" }
+    - { property: creator, label: "At least one creator" }
+    - { type: ImageObject, label: "At least one image (any figure or screenshot)", action_role: figure }
+    - { any: ["model_code_inputs/", {open_payload: true}], label: "Model code OR an openly-archived data payload (DOI/Zenodo/NCI)" }
+  encouraged:
+    - { role: graphical-abstract, label: "A graphical abstract (the ideal hero image)", action_role: graphical-abstract }
+    - { property: description,    label: "A plain-language description" }
+    - { role: model-setup-diagram, label: "A model-setup diagram", action_role: model-setup-diagram }
 
 # ── Optional describe-entities (extensible add-ons; not required) ────────────
 # Declared here so the form/CLI can offer them; each maps to a contextual entity.

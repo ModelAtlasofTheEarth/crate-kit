@@ -59,27 +59,52 @@ jobs:
           crate build .
           crate validate .
 
-      - name: enrich PIDs (best-effort; never fails the build)
+      - name: enrich (external PIDs + internal content; best-effort, never fails the build)
         shell: bash -el {0}
-        run: crate enrich . || echo "enrich skipped"
+        run: |
+          crate enrich . || echo "external enrich skipped"
+          crate enrich --internal . || echo "internal enrich skipped"
+
+      - name: readiness → job summary (the catalogue traffic-light)
+        if: ${{ !endsWith(github.repository, '-template') }}
+        continue-on-error: true
+        shell: bash -el {0}
+        run: |
+          crate readiness . --repo-url "${{ github.server_url }}/${{ github.repository }}" --markdown \
+            >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: maintain the "Model readiness" status issue (best-effort; needs issues:write)
+        if: ${{ !endsWith(github.repository, '-template') }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        shell: bash -el {0}
+        run: |
+          crate readiness . --repo-url "$REPO_URL" --markdown > /tmp/readiness.md || exit 0
+          TITLE="📋 Model readiness"
+          NUM=$(gh issue list --state open --search "in:title $TITLE" --json number,title \
+                --jq ".[] | select(.title==\"$TITLE\") | .number" 2>/dev/null | head -1 || true)
+          if [ -n "$NUM" ]; then
+            gh issue edit "$NUM" --body-file /tmp/readiness.md
+          else
+            gh issue create --title "$TITLE" --body-file /tmp/readiness.md --label crate-status 2>/dev/null \
+              || gh issue create --title "$TITLE" --body-file /tmp/readiness.md
+          fi
 
       - name: render
         if: ${{ inputs.render }}
         shell: bash -el {0}
         run: crate render . -o _site
 
-      - name: refresh data-entity issue form (live folder dropdown)
-        # Only for repos that opt in by shipping the form. First-level, non-hidden directories
-        # become the path-dropdown options (clamped to depth 1 by design), so the picker tracks
-        # the repo. The Configure (root) form is static — it has no path. Git-diff means this only
-        # re-commits when the folder set actually changes.
-        if: ${{ hashFiles('.github/ISSUE_TEMPLATE/edit-data-entity.yml') != '' }}
+      - name: refresh issue forms from the crate (folders / image files / per-type)
+        # One engine call regenerates every dynamic form so each picker tracks the repo: the data
+        # form's folder list, the content form's image/video files, and one "Edit a <type> entity"
+        # form per component type that opts in (`form: true`) and has entities. All "which" comes
+        # from the crate + profile — no domain logic in the workflow. Git-diff below only re-commits
+        # when something actually changed.
         shell: bash -el {0}
-        run: |
-          args=()
-          while IFS= read -r d; do [ -n "$d" ] && args+=(--dir "$d/"); done < <(
-            find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' | sed 's|^\./||' | sort)
-          crate issue-form --repo . --kind data --out .github/ISSUE_TEMPLATE/edit-data-entity.yml --title "[edit data] " "${args[@]}"
+        run: crate refresh-forms --repo . --out .github/ISSUE_TEMPLATE
 
       - name: commit regenerated crate (+ refreshed form)
         shell: bash -el {0}
@@ -87,7 +112,7 @@ jobs:
           git config user.name  "crate-bot"
           git config user.email "crate-bot@users.noreply.github.com"
           git add ro-crate-metadata.json
-          git add .github/ISSUE_TEMPLATE/edit-data-entity.yml 2>/dev/null || true
+          git add .github/ISSUE_TEMPLATE 2>/dev/null || true   # incl. dynamically-named typed forms
           if git diff --cached --quiet; then
             echo "nothing to commit"
           else

@@ -110,8 +110,6 @@ def _enrich_entity(entity, doc, enrich_cfg):
 
     applied = False
     for prop, spec in (cfg.get("map") or {}).items():
-        if entity.get(prop):
-            continue                                   # gap-fill only — never overwrite authored
         path, tname = (spec, None) if isinstance(spec, str) else (spec.get("path"), spec.get("transform"))
         try:
             val = jmespath.search(path, data)
@@ -119,9 +117,24 @@ def _enrich_entity(entity, doc, enrich_cfg):
             val = None
         if tname:
             val = TRANSFORMS.get(tname, lambda v, d: v)(val, doc)
-        if val not in (None, "", []):
-            entity[prop] = val
+        if val in (None, "", []):
+            continue
+        if prop == "@type":
+            # REFINE (append-not-overwrite): a resolver may add a structural type it discovered
+            # (e.g. SoftwareSourceCode) without clobbering existing types. Generic — the WHICH type
+            # comes from the profile's map, not the engine.
+            cur = entity.get("@type")
+            cur = [cur] if isinstance(cur, str) else list(cur or [])
+            for t in ([val] if isinstance(val, str) else val):
+                if t and t not in cur:
+                    cur.append(t)
+            entity["@type"] = cur[0] if len(cur) == 1 else cur
             applied = True
+            continue
+        if entity.get(prop):
+            continue                                   # gap-fill only — never overwrite authored
+        entity[prop] = val
+        applied = True
     return kind if applied else None
 
 

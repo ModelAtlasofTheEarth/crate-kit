@@ -1,0 +1,22 @@
+# Run the engine test suite on crate-kit's own pushes/PRs — so a regression is caught here, before
+# it reaches model repos through the `@v0` pin. Dependency-free: the suite has a built-in runner, so
+# no pytest install is needed.
+name: tests
+
+on:
+  push:
+    branches: [main, v0]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: pip install .
+      - name: run engine tests
+        run: python tests/test_crate_kit.py

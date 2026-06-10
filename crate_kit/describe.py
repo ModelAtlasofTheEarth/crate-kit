@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .build_crate import build_crate, _person
 from .profile import load_profile
+from .vocab import load_vocab
 
 ROOT = "./"
 
@@ -98,7 +99,20 @@ def edit_entity(repo_dir, target=".", type_=None, name=None, description=None,
         return {"error": f"no entity for path '{target}' in the crate — does it exist in the repo?"}
     entity = next(e for e in doc["@graph"] if e.get("@id") == tid)
 
-    prop_defs = _prop_defs(profile, tid, type_)
+    # Shape --set values from the entity's type. With an explicit --type (or the root), use that.
+    # Otherwise (e.g. a typed-form submission carries only fields) UNION the fields of ALL the
+    # entity's known component types — it may be multi-typed, e.g. [Dataset, SoftwareSourceCode] —
+    # so a field from any of them still shapes correctly. The @type is only appended when --type
+    # is explicit (below); this just informs shaping.
+    if type_ is not None or tid == ROOT:
+        prop_defs = _prop_defs(profile, tid, type_)
+    else:
+        cur = entity.get("@type")
+        cur = [cur] if isinstance(cur, str) else list(cur or [])
+        types_cfg = profile.get("component_types", {}) or {}
+        prop_defs = {}
+        for t in cur:
+            prop_defs.update((types_cfg.get(t, {}) or {}).get("fields", {}) or {})
     applied, warnings = [], []
 
     if name:
@@ -145,12 +159,19 @@ def _add_to_list(entity, key, val):
 
 
 def set_role(repo_dir, target, role, type_=None, caption=None):
-    """Tag an entity with a website ROLE (`additionalType`) — e.g. graphical-abstract — keeping its
-    structural @type. If the profile's website schema marks the role `single`, the tag is MOVED off
-    any other holder (cardinality enforced by the verb). Optionally set a more-specific @type
-    (ImageObject) and a caption."""
+    """Tag an entity with a website ROLE (`additionalType`) — e.g. graphical-abstract.
+
+    Vocab-driven (crate_kit/vocab.py): when the role is a known term, the term decides everything —
+    its `refines` sets the structural @type (Graphical abstract ⇒ ImageObject), its `text` field
+    routes the caption text (caption | description), its `type_value` is what lands in
+    additionalType (a loadable URI like doco:Figure, else the local term name), and `single`
+    cardinality MOVES the tag off any other holder. An unknown role still works (the escape hatch):
+    it's applied verbatim, @type only if `type_` is given, text always to `caption`."""
     repo_dir = Path(repo_dir).resolve()
     profile = load_profile(repo_dir)
+    vocab = load_vocab(profile)
+    term = vocab.get(role)
+
     crate_path = repo_dir / "ro-crate-metadata.json"
     build_crate(repo_dir, out_path=str(crate_path), merge=True)
     doc = json.loads(crate_path.read_text())
@@ -160,28 +181,46 @@ def set_role(repo_dir, target, role, type_=None, caption=None):
         return {"error": f"no entity for path '{target}' in the crate"}
     entity = next(e for e in doc["@graph"] if e.get("@id") == tid)
 
-    if type_:
-        _add_to_list(entity, "@type", type_)
-    if caption:
-        entity["caption"] = caption
+    # structural @type: explicit --type wins; else the term's `refines`.
+    struct_type = type_ or (term.refines if term else None)
+    if struct_type:
+        _add_to_list(entity, "@type", struct_type)
 
-    single = any(s.get("role") == role and s.get("single")
-                 for s in (profile.get("website", {}) or {}).values())
+    # text → the field the term carries (caption | description); default caption.
+    if caption:
+        entity[(term.text if term and term.text else "caption")] = caption
+
+    # the value that actually goes in additionalType (URI for loadable terms, else the name).
+    type_value = term.type_value if term else role
+
+    # cardinality: the term's own `single`, or (back-compat) a website slot marking this role single.
+    single = (term.single if term else False) or any(
+        s.get("role") == role and s.get("single") for s in (profile.get("website", {}) or {}).values())
     if single:                                     # move the tag off any other holder
         for e in doc["@graph"]:
             if e is entity:
                 continue
             at = e.get("additionalType")
-            if at and role in (at if isinstance(at, list) else [at]):
-                rest = [x for x in (at if isinstance(at, list) else [at]) if x != role]
+            if at and type_value in (at if isinstance(at, list) else [at]):
+                rest = [x for x in (at if isinstance(at, list) else [at]) if x != type_value]
                 if rest:
                     e["additionalType"] = rest[0] if len(rest) == 1 else rest
                 else:
                     e.pop("additionalType", None)
-    _add_to_list(entity, "additionalType", role)
+    _add_to_list(entity, "additionalType", type_value)
 
     crate_path.write_text(json.dumps(doc, indent=2))
-    return {"roled": tid, "role": role, "single": bool(single), "type": entity.get("@type")}
+    return {"roled": tid, "role": role, "additionalType": type_value, "known": term is not None,
+            "single": bool(single), "type": entity.get("@type"),
+            "text_field": (term.text if term and term.text else "caption") if caption else None}
+
+
+def command_for_role(target, role, caption=None):
+    """The CLI-teaching string for a role edit — shown in the issue confirmation comment."""
+    parts = ["crate", "role", shlex.quote(target), "--as", role]
+    if caption:
+        parts += ["--caption", shlex.quote(caption)]
+    return " ".join(parts)
 
 
 def command_for(target, type_=None, name=None, description=None, authors=None, sets=None):

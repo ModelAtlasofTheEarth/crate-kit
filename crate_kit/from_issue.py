@@ -51,6 +51,22 @@ def apply_issue(repo_dir, body, out_path=None):
         return {"applied": [res.get("link")], "edited": res.get("added"),
                 "command": res.get("command"), "out": str(repo_dir / "ro-crate-metadata.json")}
 
+    # Content form? (the "What is this file?" role field is filled) → tag a website role.
+    role_spec = next((s for s in speclist if s.get("role") == "role"), None)
+    if role_spec and parsed.get(role_spec["label"], "") not in _EMPTY:
+        from .describe import set_role, command_for_role
+        role_name = role_spec.get("roles", {}).get(parsed[role_spec["label"]], parsed[role_spec["label"]])
+        path = next((parsed.get(s["label"], "") for s in speclist if s.get("role") == "path"), "")
+        path = "." if path in (_ROOT_OPT, "(root)", "") else path.strip()
+        cap = next((parsed.get(s["label"], "") for s in speclist if s.get("role") == "caption"), "")
+        cap = None if cap in _EMPTY else cap
+        res = set_role(repo_dir, path, role_name, caption=cap)
+        if res.get("error"):
+            return res
+        return {"applied": ["additionalType"], "edited": res.get("roled"),
+                "command": command_for_role(path, role_name, cap),
+                "out": str(repo_dir / "ro-crate-metadata.json")}
+
     target, type_ = ".", None
     name = description = publication = None
     authors, sets = [], []

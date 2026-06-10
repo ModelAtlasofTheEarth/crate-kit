@@ -38,6 +38,12 @@ def main(argv=None):
     rl.add_argument("--type", dest="type_", help="also set a more-specific @type, e.g. ImageObject")
     rl.add_argument("--caption", help="caption for the asset")
 
+    rd = sub.add_parser("readiness", help="the catalogue traffic-light: tiered requirements, what's met, and a fix-it link per gap")
+    rd.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
+    rd.add_argument("--repo-url", help="the repo's GitHub URL (for fix-it issue links; else derived from codeRepository)")
+    rd.add_argument("--json", action="store_true", help="emit the report as JSON")
+    rd.add_argument("--markdown", action="store_true", help="emit a GitHub-flavoured checklist (job summary / status issue)")
+
     v = sub.add_parser("validate", help="check a repo's crate meets the minimum M@TE model requirements")
     v.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
     v.add_argument("--reverse-engineer", action="store_true",
@@ -49,12 +55,18 @@ def main(argv=None):
     g = sub.add_parser("issue-form", help="generate a GitHub issue form (.yml) from the profile")
     g.add_argument("-o", "--out", required=True, help="output path for the issue form yaml")
     g.add_argument("--repo", default=None, help="use this repo's .mate/profile.yml (else the builtin profile)")
-    g.add_argument("--kind", choices=["configure", "data", "contextual"], default="data",
+    g.add_argument("--kind", choices=["configure", "data", "contextual", "content", "typed"], default="data",
                    help="'configure' = edit root; 'data' = edit a non-root data entity (default); "
-                        "'contextual' = add a remote reference")
+                        "'contextual' = add a remote reference; 'content' = tag a file with a "
+                        "website role; 'typed' = edit a component type's fields (needs --component-type)")
+    g.add_argument("--component-type", help="for --kind typed: the component type, e.g. SoftwareSourceCode")
     g.add_argument("--dir", action="append", dest="dirs", metavar="PATH",
                    help="a live folder to offer in the data form's path dropdown (repeatable; GitHub-surface knob)")
     g.add_argument("--title", help="issue title prefix the build workflow gates on")
+
+    rf = sub.add_parser("refresh-forms", help="regenerate the dynamic issue forms from the crate+profile (folders, image files, per-type)")
+    rf.add_argument("--repo", default=".", help="repository directory (default: .)")
+    rf.add_argument("--out", default=".github/ISSUE_TEMPLATE", help="the ISSUE_TEMPLATE dir (default: .github/ISSUE_TEMPLATE)")
 
     fi = sub.add_parser("from-issue", help="write a submitted issue-form's answers into the repo's crate")
     fi.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
@@ -64,6 +76,9 @@ def main(argv=None):
 
     e = sub.add_parser("enrich", help="resolve PIDs in the crate (ORCID, publication DOI); best-effort")
     e.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
+    e.add_argument("--internal", action="store_true",
+                   help="run INTERNAL enrich instead (derive metadata from repo content, e.g. "
+                        "LICENSE→SPDX), per the profile's `internal_enrich:` list")
 
     d = sub.add_parser("describe", help="attach typed, schema-aware metadata to any entity (dir/file) in the crate")
     d.add_argument("target", help="path to describe, e.g. model_results/ or recordings/x.csv")
@@ -131,8 +146,14 @@ def main(argv=None):
         import os
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
         out = write_form(load_profile(args.repo), args.out, kind=args.kind,
-                         dirs=args.dirs, title=args.title)
+                         dirs=args.dirs, title=args.title, component_type=args.component_type)
         print(f"wrote {out}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "refresh-forms":
+        from .issue_form import refresh_forms
+        for w in refresh_forms(args.repo, args.out):
+            print(f"refreshed {w}", file=sys.stderr)
         return 0
 
     if args.cmd == "from-issue":
@@ -145,8 +166,12 @@ def main(argv=None):
         return 0
 
     if args.cmd == "enrich":
-        from .enrich import enrich as enrich_repo
-        print(json.dumps(enrich_repo(args.repo), indent=2), file=sys.stderr)
+        if args.internal:
+            from .internal_enrich import internal_enrich
+            print(json.dumps(internal_enrich(args.repo), indent=2), file=sys.stderr)
+        else:
+            from .enrich import enrich as enrich_repo
+            print(json.dumps(enrich_repo(args.repo), indent=2), file=sys.stderr)
         return 0
 
     if args.cmd == "describe":
@@ -180,6 +205,28 @@ def main(argv=None):
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
         out = write_mode(load_profile(args.repo), args.out)
         print(f"wrote {out}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "readiness":
+        from .readiness import report, report_markdown
+        rep = report(args.repo, repo_url=args.repo_url)
+        if args.json:
+            print(json.dumps(rep, indent=2))
+            return 0
+        if args.markdown:
+            print(report_markdown(rep), end="")
+            return 0
+        mark = {True: "🟢", False: "🔴"}
+        tiermark = {"required": "🔴", "encouraged": "🟡"}
+        head = "CATALOGUE-ELIGIBLE ✓" if rep["eligible"] else \
+            f"NOT YET ELIGIBLE — {rep['required_met']}/{rep['required_total']} required met"
+        print(head)
+        for item in rep["items"]:
+            tick = "🟢" if item["met"] else tiermark.get(item["tier"], "⚪")
+            line = f"  {tick} [{item['tier']}] {item['label']}"
+            if not item["met"] and item.get("gap_url"):
+                line += f"\n        → fix: {item['gap_url']}"
+            print(line)
         return 0
 
     if args.cmd == "validate":

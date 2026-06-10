@@ -1,0 +1,106 @@
+# !! VENDORED PINNED SNAPSHOT — do not edit here. Upstream source of truth is the
+# !! mate-vocabularies repo (communication.yml); re-vendor that file when it changes.
+# !! Pinned (not fetched live) so CI is hermetic — same reason profile contexts are vendored.
+# ─────────────────────────────────────────────────────────────────────────────
+# mate-communication — a controlled vocabulary for COMMUNICATING computational
+# scientific models: the assets and narrative artifacts a model website surfaces.
+#
+# Each term is used as an `additionalType` refinement on an existing schema.org type
+# (it does NOT replace the structural @type). This file defines TERMS only; a profile
+# imports it and declares usage (which terms its website requires, etc.).
+#
+# Per term:
+#   label, definition      — what the term means (human-facing; drives prompts/forms).
+#   refines                — the schema.org type this term refines (the verb sets @type to it).
+#   cardinality            — RECOMMENDED default (single | multiple); a profile may override.
+#   text                   — the text field this term naturally carries (caption | description).
+#   alignment              — crosswalk to existing vocabularies (provenance + future converters).
+#                            Two flavours:
+#                              • a resolvable URI (e.g. doco:Figure) → a LOADABLE term we reuse;
+#                                you reference the URI, nothing to mint.
+#                              • a JATS note (e.g. abstract[@abstract-type='graphical']) → JATS is
+#                                an XML tag set, NOT a JSON-LD vocab, so this is a documented
+#                                crosswalk, not an import.
+#                            `local` means genuinely homeless — no good external term exists, so we
+#                            mint it here.
+#
+# WORKED EXAMPLE — a term applied as an additionalType on a real data entity:
+#   {
+#     "@id": ".website_material/graphics/fig1.png",
+#     "@type": "ImageObject",                 # structural type — understood everywhere
+#     "additionalType": "graphical-abstract", # this vocab — the communicative FUNCTION
+#     "caption": "Coupled heat-groundwater flow model of the Sydney–Gunnedah–Bowen Basin."
+#   }
+# The structural @type never changes; additionalType says what role the asset plays; the profile
+# maps that role to a website slot and decides whether it's required.
+# ─────────────────────────────────────────────────────────────────────────────
+vocabulary: mate-communication
+version: 0
+namespace: "https://w3id.org/mate/communication#"   # PROVISIONAL — register before publishing
+
+terms:
+
+  # ── visual assets (additionalType on ImageObject / VideoObject) ──
+  graphical-abstract:
+    label: "Graphical abstract"
+    definition: "The single image that best summarises the whole model at a glance — the hero visual."
+    refines: ImageObject
+    cardinality: single
+    text: caption
+    alignment:
+      jats: "abstract[@abstract-type='graphical']"   # JATS already names this; crosswalk, not import
+
+  model-setup-diagram:
+    label: "Model setup diagram"
+    definition: "A figure depicting the model's geometry, domain, mesh, or boundary/initial conditions."
+    refines: ImageObject
+    cardinality: single
+    text: caption
+    alignment:
+      local: true   # homeless — no external term for a model-setup figure
+
+  simulation-animation:
+    label: "Simulation animation"
+    definition: "A time-evolving movie of the model's state or output — the simulation rendered over time."
+    refines: VideoObject
+    cardinality: multiple
+    text: caption
+    alignment:
+      local: true   # homeless — schema.org VideoObject is the structural type; the role is ours
+
+  key-result-figure:
+    label: "Key result figure"
+    definition: "A figure presenting a primary scientific result of the model."
+    refines: ImageObject
+    cardinality: multiple
+    text: caption
+    alignment:
+      doco: "http://purl.org/spar/doco/Figure"   # SPAR/DoCO Figure — loadable URI we reuse
+
+  figure:
+    label: "Figure"
+    definition: "A supporting figure for the gallery — any model image not assigned a more specific term."
+    refines: ImageObject
+    cardinality: multiple
+    text: caption
+    alignment:
+      doco: "http://purl.org/spar/doco/Figure"   # SPAR/DoCO Figure — loadable URI we reuse
+
+  # ── narrative artifacts (additionalType on CreativeWork; or a root text property) ──
+  plain-language-summary:
+    label: "Plain-language summary"
+    definition: "A non-technical summary of the model and its findings for a general audience — distinct from the technical abstract."
+    refines: CreativeWork
+    cardinality: single
+    text: description
+    alignment:
+      jats: "abstract[@abstract-type='plain-language-summary']"   # JATS names this; crosswalk
+
+  data-availability-statement:
+    label: "Data availability statement"
+    definition: "A statement of what data and code the model provides and where it can be obtained."
+    refines: CreativeWork
+    cardinality: single
+    text: description
+    alignment:
+      local: true   # JATS has no settled abstract-type for this; mint locally for now

@@ -36,6 +36,17 @@ def _normalize_id(ref):
     return r
 
 
+def _detect_type(cdef, reference, eid):
+    """Refine a contextual entity's @type from the profile's declarative `detect_type` rules
+    (generic: the engine just matches; the rules are the profile's). First rule whose `match`
+    appears in the reference/@id wins; otherwise the kind's default `type`."""
+    for rule in (cdef.get("detect_type") or []):
+        m = rule.get("match")
+        if m and (m in (reference or "") or m in (eid or "")):
+            return rule.get("type", cdef.get("type"))
+    return cdef.get("type")
+
+
 def _link_root(root, prop, ref_obj):
     """Append a reference onto a root property, normalising to a list and de-duping."""
     cur = root.get(prop)
@@ -75,7 +86,7 @@ def add_contextual(repo_dir, kind, reference, name=None):
             doc["@graph"].append(ent)
     else:
         eid = _normalize_id(reference)
-        ent = by_id.get(eid) or {"@id": eid, "@type": cdef["type"]}
+        ent = by_id.get(eid) or {"@id": eid, "@type": _detect_type(cdef, reference, eid)}
         if name:
             ent["name"] = name
         if eid not in by_id:
@@ -83,8 +94,9 @@ def add_contextual(repo_dir, kind, reference, name=None):
 
     _link_root(root, cdef["link"], {"@id": eid})
     crate_path.write_text(json.dumps(doc, indent=2))
-    return {"added": eid, "kind": kind, "type": cdef.get("type"), "link": cdef["link"],
-            "enrich": cdef.get("enrich"), "command": command_for_contextual(kind, reference, name)}
+    return {"added": eid, "kind": kind, "type": by_id.get(eid, ent).get("@type") if eid in by_id else ent.get("@type"),
+            "link": cdef["link"], "enrich": cdef.get("enrich"),
+            "command": command_for_contextual(kind, reference, name)}
 
 
 def command_for_contextual(kind, reference, name=None):

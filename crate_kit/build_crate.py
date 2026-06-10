@@ -355,6 +355,14 @@ def build_crate(repo_dir, out_path=None, reverse_engineer=False, merge=True, git
         summary["mode"] = ("migrate" if reverse_engineer
                            else "create" if not crate_path.exists() else "rebuild")
 
+    # The crate's @context is the profile's PINNED context list (ro-crate + schema.org + any
+    # discipline contexts, e.g. codemeta), so terms beyond schema.org resolve to real URIs. Generic:
+    # the engine just applies whatever the profile declares; a discipline adds its own contexts.
+    from .profile import load_profile
+    ctx = load_profile(repo_dir).get("context") or None
+    if ctx:
+        doc["@context"] = ctx
+
     summary["graph_size"] = len(doc["@graph"])
     if out_path:
         Path(out_path).write_text(json.dumps(doc, indent=2))
