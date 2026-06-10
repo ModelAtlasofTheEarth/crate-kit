@@ -55,6 +55,18 @@ jobs:
           environment-file: environment.yml
           cache-environment: true
 
+      - name: pin engine to current @v0 (the env cache can serve a stale crate-kit)
+        # `v0` is a MOVING tag but the micromamba cache key hashes environment.yml (which doesn't
+        # change when the tag moves) — so a cache hit restores an OLD crate-kit. Force-reinstall just
+        # the engine from the current v0 commit each run. (A lockfile/Pixi makes this unnecessary —
+        # see the Pixi to-do.) Skips on -template repos which are inert.
+        if: ${{ !endsWith(github.repository, '-template') }}
+        shell: bash -el {0}
+        run: |
+          pip install --force-reinstall --no-deps --no-cache-dir \
+            "crate-kit @ git+https://github.com/ModelAtlasofTheEarth/crate-kit.git@v0"
+          crate --version 2>/dev/null || echo "crate installed"
+
       - name: apply issue submission (if any)
         if: ${{ inputs.issue_body != '' }}
         shell: bash -el {0}
