@@ -376,3 +376,16 @@ def build_crate(repo_dir, out_path=None, reverse_engineer=False, merge=True, git
     if out_path:
         Path(out_path).write_text(json.dumps(doc, indent=2))
     return doc, summary
+
+
+def write_preview(repo_dir):
+    """Write `ro-crate-preview.html` next to the crate (RO-Crate's standard preview convention) via
+    ro-crate-py — a faithful, human-readable dump of the WHOLE crate graph, for authors/debugging.
+    NOT the website page (that's the resolver's curated projection); deliberately plain. BEST-EFFORT:
+    a nicety, never fatal. `crate.preview.write(dir)` emits ONLY the HTML (no data copy)."""
+    try:
+        from rocrate.rocrate import ROCrate
+        ROCrate(str(repo_dir), gen_preview=True).preview.write(str(repo_dir))
+        return True
+    except Exception:
+        return False

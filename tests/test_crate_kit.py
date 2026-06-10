@@ -340,6 +340,17 @@ def test_apply_map_github_gapfill_and_type_refine():
     assert "license" not in ent2
 
 
+# ── ro-crate-preview.html (faithful crate dump via ro-crate-py) ──────────────
+
+def test_build_writes_preview_html():
+    from crate_kit.build_crate import write_preview
+    with repo({"data/run.py": "x=1"}) as d:
+        edit_entity(d, ".", name="Demo", sets=["license=MIT"])
+        assert write_preview(d) is True
+        html = (d / "ro-crate-preview.html").read_text(encoding="utf-8")
+        assert "<html" in html.lower() and "Demo" in html      # faithful: the crate's name appears
+
+
 # ── built-in runner (no pytest) ──────────────────────────────────────────────
 
 def _run():

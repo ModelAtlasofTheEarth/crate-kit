@@ -3,7 +3,7 @@ import argparse
 import json
 import sys
 
-from .build_crate import build_crate
+from .build_crate import build_crate, write_preview
 from .render import render as render_repo
 from .validate import validate as validate_repo
 
@@ -125,6 +125,8 @@ def main(argv=None):
         doc, summary = build_crate(args.repo, out_path=out, reverse_engineer=args.reverse_engineer)
         if args.stdout:
             print(json.dumps(doc, indent=2))
+        if out:                                    # refresh the human-readable preview (best-effort)
+            summary["preview"] = write_preview(args.repo)
         print(json.dumps(summary, indent=2), file=sys.stderr)
         return 0
 
