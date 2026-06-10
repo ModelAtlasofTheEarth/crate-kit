@@ -45,15 +45,29 @@ def _t_first(v, doc):
     return v[0] if isinstance(v, list) and v else v
 
 
+def _datacite_orcid(a):
+    for ni in (a.get("nameIdentifiers") or []):
+        v = ni.get("nameIdentifier", "")
+        if "orcid" in v.lower():
+            return v
+    return None
+
+
 def _t_people(v, doc):
-    """An array of author objects (Crossref shape) -> minted Person entities + @id references.
-    Anonymous inline objects don't round-trip through editors, so every author gets a real @id."""
+    """An array of author objects -> minted Person entities + @id references. Tolerant of BOTH
+    Crossref (`given`/`family`/`ORCID`) and DataCite (`givenName`/`familyName`/`name` +
+    `nameIdentifiers`) shapes, so the same transform serves either resolver. Anonymous inline objects
+    don't round-trip through editors, so every author gets a real @id."""
     refs = []
     for a in (v or []):
-        nm = " ".join(x for x in (a.get("given"), a.get("family")) if x) if isinstance(a, dict) else None
+        if not isinstance(a, dict):
+            continue
+        given = a.get("given") or a.get("givenName")
+        family = a.get("family") or a.get("familyName")
+        nm = " ".join(x for x in (given, family) if x) or a.get("name")
         if not nm:
             continue
-        pid = a.get("ORCID") or ("#author-" + _slug(nm))
+        pid = a.get("ORCID") or _datacite_orcid(a) or ("#author-" + _slug(nm))
         if not any(e.get("@id") == pid for e in doc["@graph"]):
             doc["@graph"].append({"@id": pid, "@type": "Person", "name": nm})
         refs.append({"@id": pid})
@@ -61,7 +75,9 @@ def _t_people(v, doc):
 
 
 def _t_id_ref(v, doc):
-    return {"@id": v} if v else None
+    if not v or v == "NOASSERTION":          # GitHub's "no SPDX license detected" — not a license
+        return None
+    return {"@id": v}
 
 
 def _t_striptags(v, doc):
@@ -93,23 +109,14 @@ def _resolver_for(entity_id, enrich_cfg):
     return None, None
 
 
-def _enrich_entity(entity, doc, enrich_cfg):
-    """Resolve one entity in place. Returns the resolver kind if anything was applied, else None."""
-    eid = entity.get("@id", "")
-    if not eid.startswith("http"):
-        return None
-    kind, cfg = _resolver_for(eid, enrich_cfg)
-    if not cfg:
-        return None
-    pid = _pid(eid, cfg)
-    if not pid:
-        return None
-    data = _get_json(cfg["url"].format(id=pid), cfg.get("accept", "application/json"))
-    if not data:
-        return None
-
+def _apply_map(entity, doc, data, mapping):
+    """Apply a resolver's `map` (JMESPath paths + optional named transforms) to an entity, in place.
+    `@type` is REFINED (append, never overwrite) so a resolver can add a discovered type
+    (SoftwareSourceCode…) without clobbering; other props are GAP-FILL (never overwrite authored).
+    Pure (no network) — the shared core of the primary resolver AND any fallback, and unit-testable
+    on a sample response. Returns True if anything was applied."""
     applied = False
-    for prop, spec in (cfg.get("map") or {}).items():
+    for prop, spec in (mapping or {}).items():
         path, tname = (spec, None) if isinstance(spec, str) else (spec.get("path"), spec.get("transform"))
         try:
             val = jmespath.search(path, data)
@@ -120,9 +127,6 @@ def _enrich_entity(entity, doc, enrich_cfg):
         if val in (None, "", []):
             continue
         if prop == "@type":
-            # REFINE (append-not-overwrite): a resolver may add a structural type it discovered
-            # (e.g. SoftwareSourceCode) without clobbering existing types. Generic — the WHICH type
-            # comes from the profile's map, not the engine.
             cur = entity.get("@type")
             cur = [cur] if isinstance(cur, str) else list(cur or [])
             for t in ([val] if isinstance(val, str) else val):
@@ -135,6 +139,32 @@ def _enrich_entity(entity, doc, enrich_cfg):
             continue                                   # gap-fill only — never overwrite authored
         entity[prop] = val
         applied = True
+    return applied
+
+
+def _enrich_entity(entity, doc, enrich_cfg):
+    """Resolve one entity in place. Tries the resolver; if it yields nothing AND the resolver declares
+    a `fallback` (e.g. publication: Crossref → DataCite for preprint/dataset DOIs), tries that too.
+    Returns the resolver kind if anything was applied, else None."""
+    eid = entity.get("@id", "")
+    if not eid.startswith("http"):
+        return None
+    kind, cfg = _resolver_for(eid, enrich_cfg)
+    if not cfg:
+        return None
+    pid = _pid(eid, cfg)
+    if not pid:
+        return None
+
+    data = _get_json(cfg["url"].format(id=pid), cfg.get("accept", "application/json"))
+    applied = _apply_map(entity, doc, data, cfg.get("map")) if data else False
+
+    fb = cfg.get("fallback")
+    if not applied and fb and fb.get("url"):
+        fb_pid = (_pid(eid, fb) or pid) if fb.get("id_pattern") else pid
+        fdata = _get_json(fb["url"].format(id=fb_pid), fb.get("accept", "application/json"))
+        if fdata:
+            applied = _apply_map(entity, doc, fdata, fb.get("map"))
     return kind if applied else None
 
 

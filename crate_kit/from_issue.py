@@ -86,7 +86,8 @@ def apply_issue(repo_dir, body, out_path=None):
         if role == "path":
             target = "." if val in (_ROOT_OPT, "(root)") else val.strip()
         elif role == "type":
-            type_ = None if val == _TYPE_KEEP else val.strip()
+            v = val.strip()
+            type_ = None if v == _TYPE_KEEP else spec.get("typemap", {}).get(v, v)   # label → @type key
         elif spec.get("input") == "people":
             authors = [line for line in val.splitlines() if line.strip()]
         elif spec.get("enrich") == "publication":
@@ -113,11 +114,11 @@ def apply_issue(repo_dir, body, out_path=None):
     # 2) citation reference (a link to another work — valid on any entity) as a small post-pass
     crate_path = Path(out_path) if out_path else repo_dir / "ro-crate-metadata.json"
     if publication:
+        from .contextual import _normalize_id
         doc = json.loads(crate_path.read_text())
         entity = next((e for e in doc["@graph"] if e.get("@id") == tid), None)
         if entity is not None:
-            doi_url = (publication if publication.startswith("http")
-                       else f"https://doi.org/{publication}")
+            doi_url = _normalize_id(publication)   # canonicalise → same @id as the Add-reference path
             entity["citation"] = {"@id": doi_url}
             # mint a stub so `enrich`'s entity-based crosswalk can resolve it (Crossref)
             if not any(e.get("@id") == doi_url for e in doc["@graph"]):

@@ -164,19 +164,33 @@ def _root_specs(profile):
     return out
 
 
-def _path_spec(dirs):
-    # Always a dropdown — folders are DERIVED from the repo by the build's live refresh, never
-    # hardcoded. Empty repo = just the root; folders appear after the first build finds them.
+def _path_spec(dirs, include_root=True):
+    # Always a dropdown — options are DERIVED from the repo by the build's live refresh, never
+    # hardcoded. Root is offered ONLY when include_root (Configure edits root; the non-root forms
+    # don't). It's also the fallback when there are no other options, so the dropdown is never empty.
+    opts = list(dirs or [])
+    if include_root or not opts:
+        opts = [_ROOT_OPT] + opts
     return {"id": "path", "role": "path", "input": "dropdown", "required": False,
-            "label": "Which entity to edit", "options": [_ROOT_OPT] + list(dirs or [])}
+            "label": "Which entity to edit", "options": opts}
+
+
+_TYPE_HELP = ("Optional. *Source code* = your model's own code/scripts in this repo. "
+              "*Application* = a packaged tool/solver you used (often better added via 'Add a "
+              "reference'). Picking a type unlocks its type-specific fields on a dedicated form.")
 
 
 def _type_spec(profile):
-    opts = [_TYPE_KEEP] + list((profile.get("component_types", {}) or {}).keys())
-    if len(opts) <= 1:
+    types = profile.get("component_types", {}) or {}
+    if not types:
         return None
+    # options are the human LABELS (clearer than the schema keys, e.g. SoftwareSourceCode); a
+    # label->key map lets the parser resolve the pick back to the @type. Help text disambiguates
+    # the choice at the decision point (the App-vs-SourceCode confusion).
+    label_to_key = {(tdef.get("label") or k): k for k, tdef in types.items()}
     return {"id": "entity_type", "role": "type", "input": "dropdown", "required": False,
-            "label": "Type tag (optional — type-specific fields are edited in Crate-O)", "options": opts}
+            "label": "Type tag", "help": _TYPE_HELP,
+            "options": [_TYPE_KEEP] + list(label_to_key), "typemap": label_to_key}
 
 
 def parser_specs(profile):
@@ -244,7 +258,7 @@ def build_configure_form(profile, title=None, labels=None):
 def build_data_entity_form(profile, dirs=None, title=None, labels=None):
     """Form 2: edit a NON-ROOT data entity. Path selector (live dir dropdown) + type tag +
     universal fields. `dirs` is a GitHub-surface knob passed by the build workflow."""
-    specs = [_path_spec(dirs)]
+    specs = [_path_spec(dirs, include_root=False)]   # root is edited via Configure, not here
     t = _type_spec(profile)
     if t:
         specs.append(t)
@@ -272,7 +286,7 @@ def build_typed_entity_form(profile, type_name, dirs=None, title=None, labels=No
     intro = (f"Edit the **{label}**-specific metadata for one entity below (blank = leave as-is). "
              f"These fields come from its `{type_name}` type. Universal fields (name, description, "
              f"authors) live on *Edit a data entity*; richer editing is in Crate-O.")
-    specs = [_path_spec(dirs)] + _typed_field_specs(profile, type_name)
+    specs = [_path_spec(dirs, include_root=False)] + _typed_field_specs(profile, type_name)
     meta = {"name": f"Edit a {label} entity", "title": "[edit data] ", "labels": ["crate-edit"]}
     return _wrap(meta, intro, specs, title=title, labels=labels)
 

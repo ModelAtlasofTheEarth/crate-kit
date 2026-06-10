@@ -124,6 +124,14 @@ enrich:
       publisher:     "message.publisher"
       pagination:    "message.page"
       license:       { path: "message.license[0].URL", transform: id_ref }
+    fallback:                                   # DataCite — preprint / dataset / software DOIs that
+      url: "https://api.datacite.org/dois/{id}"  # aren't in Crossref (e.g. essoar, Zenodo, figshare)
+      map:
+        name:          "data.attributes.titles[0].title"
+        datePublished: "data.attributes.publicationYear"
+        url:           "data.attributes.url"
+        publisher:     "data.attributes.publisher"
+        author:        { path: "data.attributes.creators", transform: people }
   organization:                                 # ROR (v2) -> Organization (funders)
     match: "ror.org"
     url: "https://api.ror.org/v2/organizations/{id}"
@@ -141,6 +149,16 @@ enrich:
       description:     { path: "metadata.description", transform: striptags }
       license:         "metadata.license.id"
       keywords:        "metadata.keywords"
+  software_repo:                                # GitHub repo -> SoftwareSourceCode metadata
+    match: "github.com"                          # (unauthenticated API: 60 req/hr — best-effort)
+    id_pattern: 'github\.com/([^/]+/[^/?#]+)'
+    url: "https://api.github.com/repos/{id}"
+    map:
+      name:                "name"
+      description:         "description"
+      programmingLanguage: "language"
+      url:                 "html_url"
+      license:             { path: "license.spdx_id", transform: id_ref }
 
 # Generic catalogue gate (legacy flat list — superseded by `readiness:` below, kept for reference).
 requires_for_website:
@@ -179,7 +197,7 @@ component_types:
   # is schema.org-for-software plus ~a dozen extra terms; it's a FIELD vocabulary, so it rides this
   # component_types mechanism (NOT additionalType). Any discipline extends the same way.
   SoftwareSourceCode:
-    label: "Software source code"
+    label: "Software source code (your model's code / scripts)"
     form: true            # generate an "Edit a software source code entity" form when one exists
     fields:
       programmingLanguage:  { label: "Language(s)", input: list }
@@ -193,7 +211,7 @@ component_types:
       readme:               { label: "README URL", input: text, vocab: codemeta }
       referencePublication: { label: "Reference publication (DOI)", input: text, vocab: codemeta }
   SoftwareApplication:
-    label: "Software application"
+    label: "Software application (a packaged tool / solver you used)"
     form: true
     fields:
       softwareVersion:      { label: "Version", input: text }

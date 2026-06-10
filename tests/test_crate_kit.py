@@ -14,10 +14,11 @@ from pathlib import Path
 from crate_kit.build_crate import build_crate
 from crate_kit.contextual import add_contextual
 from crate_kit.describe import edit_entity, set_role
-from crate_kit.contextual import _detect_type
+from crate_kit.contextual import _detect_type, _normalize_id
+from crate_kit.enrich import _apply_map
 from crate_kit.from_issue import apply_issue
 from crate_kit.internal_enrich import internal_enrich
-from crate_kit.issue_form import refresh_forms
+from crate_kit.issue_form import build_data_entity_form, build_typed_entity_form, refresh_forms
 from crate_kit.tags import apply_tag
 from crate_kit.profile import load_profile
 from crate_kit.readiness import report
@@ -246,6 +247,97 @@ def test_raw_base_is_commit_pinned():
     assert _raw_base({"codeRepository": "https://github.com/me/r.git", "_git_commit": "abc123"}) \
         == "https://raw.githubusercontent.com/me/r/abc123/"
     assert _raw_base({"codeRepository": "https://github.com/me/r"}).endswith("/main/")   # fallback
+
+
+# ── forms exclude root; refresh-forms edge cases ─────────────────────────────
+
+def test_data_and_typed_forms_exclude_root():
+    p = load_profile()
+    data = build_data_entity_form(p, dirs=["model_code_inputs/"])
+    opts = next(b["attributes"]["options"] for b in data["body"] if b.get("id") == "path")
+    assert "model_code_inputs/" in opts and not any("root" in o for o in opts)   # root excluded
+    typed = build_typed_entity_form(p, "SoftwareSourceCode", dirs=["model_code_inputs/"])
+    topts = next(b["attributes"]["options"] for b in typed["body"] if b.get("id") == "path")
+    assert not any("root" in o for o in topts)
+    empty = build_data_entity_form(p, dirs=[])                                   # empty → root fallback
+    eopts = next(b["attributes"]["options"] for b in empty["body"] if b.get("id") == "path")
+    assert any("root" in o for o in eopts)
+
+
+def test_refresh_forms_removes_stale_typed_form():
+    with repo({"a.txt": "x"}) as d:                       # no software entities
+        tdir = d / ".github" / "ISSUE_TEMPLATE"
+        tdir.mkdir(parents=True)
+        (tdir / "edit-software-source-code-entity.yml").write_text("stale")
+        refresh_forms(d, tdir)
+        assert not (tdir / "edit-software-source-code-entity.yml").exists()      # removed: no entities
+
+
+# ── type dropdown shows labels, resolves to the @type key ────────────────────
+
+def test_type_dropdown_uses_labels_and_resolves_to_key():
+    data = build_data_entity_form(load_profile(), dirs=["model_code_inputs/"])
+    typ = next(b for b in data["body"] if b.get("id") == "entity_type")
+    opts = typ["attributes"]["options"]
+    assert any("source code" in o.lower() for o in opts)          # human label shown
+    assert "SoftwareSourceCode" not in opts                       # not the raw key
+    body = ("### Which entity to edit\n\nmodel_code_inputs/\n\n"
+            "### Type tag\n\nSoftware source code (your model's code / scripts)\n")
+    with repo({"model_code_inputs/run.py": "x=1"}) as d:
+        apply_issue(d, body)
+        assert "SoftwareSourceCode" in _entity(d, "model_code_inputs/")["@type"]   # label → key
+
+
+# ── DOI canonicalisation (dedup across the two publication entry points) ──────
+
+def test_doi_canonicalisation():
+    url = "https://essopenarchive.org/doi/full/10.22541/essoar.174413825.53806221/v1"
+    bare = "10.22541/essoar.174413825.53806221/v1"
+    want = "https://doi.org/10.22541/essoar.174413825.53806221/v1"
+    assert _normalize_id(url) == want
+    assert _normalize_id(bare) == want
+    assert _normalize_id(url) == _normalize_id(bare)        # same @id → dedup works
+    assert _normalize_id("https://github.com/me/repo") == "https://github.com/me/repo"   # non-DOI passes through
+
+
+# ── enrich: fallback map shapes (DataCite, GitHub) + @type refine, offline ────
+
+def test_apply_map_datacite_shape():
+    ent = {"@id": "https://doi.org/10.22541/x", "@type": "ScholarlyArticle"}
+    doc = {"@graph": [ent]}
+    data = {"data": {"attributes": {
+        "titles": [{"title": "A preprint"}], "publicationYear": 2022,
+        "creators": [{"givenName": "Ben", "familyName": "Mather"},
+                     {"name": "D. Müller",
+                      "nameIdentifiers": [{"nameIdentifier": "https://orcid.org/0000-0001-0000-0000",
+                                           "nameIdentifierScheme": "ORCID"}]}]}}}
+    mapping = {"name": "data.attributes.titles[0].title",
+               "datePublished": "data.attributes.publicationYear",
+               "author": {"path": "data.attributes.creators", "transform": "people"}}
+    assert _apply_map(ent, doc, data, mapping) is True
+    assert ent["name"] == "A preprint" and ent["datePublished"] == 2022
+    people = [e for e in doc["@graph"] if e.get("@type") == "Person"]
+    assert {p["name"] for p in people} == {"Ben Mather", "D. Müller"}            # both name shapes
+    assert any(p["@id"] == "https://orcid.org/0000-0001-0000-0000" for p in people)   # DataCite ORCID
+
+
+def test_apply_map_github_gapfill_and_type_refine():
+    ent = {"@id": "https://github.com/me/repo", "@type": "SoftwareSourceCode", "description": "authored"}
+    doc = {"@graph": [ent]}
+    data = {"description": "from github", "language": "Python", "license": {"spdx_id": "MIT"}, "kind": "X"}
+    mapping = {"description": "description", "programmingLanguage": "language",
+               "license": {"path": "license.spdx_id", "transform": "id_ref"}}
+    _apply_map(ent, doc, data, mapping)
+    assert ent["description"] == "authored"             # gap-fill: NOT overwritten
+    assert ent["programmingLanguage"] == "Python"       # filled
+    assert ent["license"] == {"@id": "MIT"}
+    _apply_map(ent, doc, {"kind": "Tool"}, {"@type": "kind"})
+    assert ent["@type"] == ["SoftwareSourceCode", "Tool"]   # @type refined (appended), not overwritten
+    # GitHub's NOASSERTION (no SPDX license detected) must NOT be stored as a license
+    ent2 = {"@id": "x", "@type": "SoftwareSourceCode"}
+    _apply_map(ent2, {"@graph": [ent2]}, {"license": {"spdx_id": "NOASSERTION"}},
+               {"license": {"path": "license.spdx_id", "transform": "id_ref"}})
+    assert "license" not in ent2
 
 
 # ── built-in runner (no pytest) ──────────────────────────────────────────────

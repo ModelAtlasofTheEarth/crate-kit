@@ -20,17 +20,22 @@ from .profile import load_profile
 
 ORCID_RE = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
 ROR_RE = re.compile(r"^0[a-z0-9]{8}$")
+DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"<>?#]+")   # a DOI, even embedded in a publisher URL
 
 
 def _normalize_id(ref):
-    """Turn a typed reference into a canonical @id URL (so it round-trips and enrich can match)."""
+    """Turn a typed reference into a canonical @id URL (so it round-trips, dedupes, and enrich can
+    match). Crucially, a DOI is canonicalised to `https://doi.org/<doi>` EVEN when pasted as a
+    publisher URL (e.g. essopenarchive.org/doi/full/10.x/…) — so the same paper added two ways gets
+    one @id and dedup works. Non-DOI URLs (a GitHub repo, a homepage) pass through unchanged."""
     r = (ref or "").strip()
+    m = DOI_RE.search(r)
+    if m:
+        return "https://doi.org/" + m.group(0).rstrip(".")
     if r.startswith("http"):
         return r
     if ORCID_RE.match(r):
         return f"https://orcid.org/{r}"
-    if r.startswith("10."):
-        return f"https://doi.org/{r}"
     if ROR_RE.match(r):
         return f"https://ror.org/{r}"
     return r
