@@ -359,9 +359,18 @@ def build_crate(repo_dir, out_path=None, reverse_engineer=False, merge=True, git
     # discipline contexts, e.g. codemeta), so terms beyond schema.org resolve to real URIs. Generic:
     # the engine just applies whatever the profile declares; a discipline adds its own contexts.
     from .profile import load_profile
-    ctx = load_profile(repo_dir).get("context") or None
+    prof = load_profile(repo_dir)
+    ctx = prof.get("context") or None
     if ctx:
         doc["@context"] = ctx
+
+    # Version stamp so the website can branch legacy↔new (Julian's redesign doc). Prototype keys
+    # (underscore = provenance note, like _git_commit) — the resolver surfaces them in website.json.
+    root = next((e for e in doc["@graph"] if e.get("@id") == "./"), None)
+    if root is not None:
+        root["_crate_profile"] = prof.get("profile") or "base"
+        if prof.get("version") is not None:
+            root["_crate_profile_version"] = prof.get("version")
 
     summary["graph_size"] = len(doc["@graph"])
     if out_path:

@@ -91,6 +91,20 @@ def _role_specs(profile, dirs=None):
     ]
 
 
+def _tag_specs(profile, target="root"):
+    """Multi-select dropdown specs for the profile's `tag_sets` that target `target`. Options are the
+    set's term names; the spec carries a name->id map so the parser can resolve picks back to ids."""
+    out = []
+    for name, tset in (profile.get("tag_sets") or {}).items():
+        if (tset.get("target") or "root") != target:
+            continue
+        label_to_id = {t.get("name", t["id"]): t["id"] for t in (tset.get("terms") or []) if "id" in t}
+        out.append({"id": f"tag_{name}", "role": "tag", "tag_set": name, "input": "dropdown",
+                    "multiple": True, "required": False, "label": tset.get("label", name),
+                    "options": list(label_to_id), "tagmap": label_to_id})
+    return out
+
+
 def _contextual_specs(profile):
     """Specs for the 'Add a contextual entity' form. The kind dropdown is generated from the
     profile's `contextual:` block; the spec carries a label->key map so the parser can resolve it."""
@@ -174,6 +188,7 @@ def parser_specs(profile):
     specs += _contextual_specs(profile)
     specs += [s for s in _role_specs(profile) if s.get("role") in ("role", "caption")]
     specs += _all_component_field_specs(profile)
+    specs += _tag_specs(profile, "root")
     return specs
 
 
@@ -185,6 +200,8 @@ def _element(spec):
     if inp == "dropdown":
         etype = "dropdown"
         attrs["options"] = list(spec.get("options") or [])
+        if spec.get("multiple"):
+            attrs["multiple"] = True
     elif inp in ("textarea", "people"):
         etype = "textarea"
         if inp == "people":
@@ -213,10 +230,12 @@ def _wrap(meta, intro, specs, title=None, labels=None, name=None):
 
 
 def build_configure_form(profile, title=None, labels=None):
-    """Form 1: edit the ROOT entity (the whole dataset). No path, no type, no payload."""
+    """Form 1: edit the ROOT entity (the whole dataset). Root fields + any root-targeted tag-set
+    dropdowns (controlled categories). No path, no type, no payload."""
     form = profile.get("form", {}) or {}
+    specs = _root_specs(profile) + _tag_specs(profile, "root")
     return _wrap(_CONFIGURE_DEFAULTS, form.get("intro_configure", _INTRO_CONFIGURE),
-                 _root_specs(profile), title=title, labels=labels, name=form.get("name_configure"))
+                 specs, title=title, labels=labels, name=form.get("name_configure"))
 
 
 def build_data_entity_form(profile, dirs=None, title=None, labels=None):

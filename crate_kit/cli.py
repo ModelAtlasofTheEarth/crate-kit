@@ -44,6 +44,12 @@ def main(argv=None):
     rd.add_argument("--json", action="store_true", help="emit the report as JSON")
     rd.add_argument("--markdown", action="store_true", help="emit a GitHub-flavoured checklist (job summary / status issue)")
 
+    tg = sub.add_parser("tag", help="apply controlled tags (DefinedTerm) to an entity — e.g. model_category")
+    tg.add_argument("tag_set", help="the tag set from the profile (e.g. model_category)")
+    tg.add_argument("terms", nargs="+", help="term id(s) or name(s) to apply")
+    tg.add_argument("--repo", default=".", help="repository directory (default: .)")
+    tg.add_argument("--target", help="entity to tag (default: the set's profile target, usually root)")
+
     v = sub.add_parser("validate", help="check a repo's crate meets the minimum M@TE model requirements")
     v.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
     v.add_argument("--reverse-engineer", action="store_true",
@@ -227,6 +233,11 @@ def main(argv=None):
             if not item["met"] and item.get("gap_url"):
                 line += f"\n        → fix: {item['gap_url']}"
             print(line)
+        return 0
+
+    if args.cmd == "tag":
+        from .tags import apply_tag
+        print(json.dumps(apply_tag(args.repo, args.tag_set, args.terms, target=args.target), indent=2), file=sys.stderr)
         return 0
 
     if args.cmd == "validate":

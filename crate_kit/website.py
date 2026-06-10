@@ -29,13 +29,16 @@ def _atypes(e):
 
 
 def _raw_base(root):
-    """raw.githubusercontent base for resolving in-repo asset paths to absolute URLs."""
+    """raw.githubusercontent base for resolving in-repo asset paths to absolute URLs. COMMIT-PINNED
+    for immutability (build from a snapshot, not a moving target): prefer the full commit SHA, then
+    the pinned version (tag / short-sha), else fall back to main."""
     code = (root.get("codeRepository") or "").rstrip("/")
     if code.endswith(".git"):
         code = code[:-4]
-    if "github.com/" in code:
-        return code.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/main/"
-    return None
+    if "github.com/" not in code:
+        return None
+    ref = root.get("_git_commit") or root.get("version") or "main"
+    return code.replace("https://github.com/", "https://raw.githubusercontent.com/") + f"/{ref}/"
 
 
 def _abs(v, raw_base):
@@ -127,6 +130,37 @@ def resolve_website(repo_dir, out_path=None, build=True):
         val = _slot(doc, by_id, root, spec, raw_base, role_value)
         if val not in (None, "", []):
             site[slot] = val
+
+    # Tags → categories. Every DefinedTerm in the graph is an applied controlled tag; group them by
+    # their set (inDefinedTermSet → the profile's website group) → a grouped `tags` map + a flat
+    # `categories` list (Quarto's single category filter). Free-text keywords stay separate (search).
+    set_group = {"#tagset-" + name: (tset.get("website") or name)
+                 for name, tset in (profile.get("tag_sets") or {}).items()}
+    grouped, flat = {}, []
+    for e in doc["@graph"]:
+        if "DefinedTerm" not in _types(e):
+            continue
+        nm = e.get("name") or e.get("termCode")
+        if not nm:
+            continue
+        flat.append(nm)
+        sref = e.get("inDefinedTermSet") or {}
+        seid = sref.get("@id") if isinstance(sref, dict) else sref
+        grouped.setdefault(set_group.get(seid, "tags"), []).append(nm)
+    if flat:
+        site.setdefault("categories", sorted(set(flat)))
+    if grouped:
+        site.setdefault("tags", {g: sorted(set(v)) for g, v in grouped.items()})
+
+    # Structural metadata (not content slots) — lets the renderer branch legacy↔new and lets the
+    # registry pin an immutable source: which profile/version produced the crate, the source repo,
+    # and the exact commit it describes.
+    for key, val in (("crate_profile", root.get("_crate_profile")),
+                     ("crate_version", root.get("_crate_profile_version")),
+                     ("repository", root.get("codeRepository")),
+                     ("commit", root.get("_git_commit"))):
+        if val not in (None, "", []):
+            site.setdefault(key, val)
 
     if out_path:
         Path(out_path).write_text(json.dumps(site, indent=2))

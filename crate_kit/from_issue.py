@@ -69,7 +69,7 @@ def apply_issue(repo_dir, body, out_path=None):
 
     target, type_ = ".", None
     name = description = publication = None
-    authors, sets = [], []
+    authors, sets, tags = [], [], []
 
     for label, spec in specs.items():
         val = parsed.get(label, "")
@@ -78,6 +78,11 @@ def apply_issue(repo_dir, body, out_path=None):
         role = spec.get("role")
         if role in ("kind", "ref", "cname"):
             continue   # contextual-only fields (handled above)
+        if role == "tag":
+            labels = [x.strip() for x in re.split(r"[,\n]", val) if x.strip()]
+            ids = [spec.get("tagmap", {}).get(l, l) for l in labels]
+            tags.append((spec.get("tag_set"), ids))
+            continue
         if role == "path":
             target = "." if val in (_ROOT_OPT, "(root)") else val.strip()
         elif role == "type":
@@ -119,6 +124,14 @@ def apply_issue(repo_dir, body, out_path=None):
                 doc["@graph"].append({"@id": doi_url, "@type": "ScholarlyArticle"})
             applied.append("citation")
             crate_path.write_text(json.dumps(doc, indent=2))
+
+    # tag post-pass: apply controlled tags (DefinedTerm) picked on the configure form's tag dropdowns
+    if tags:
+        from .tags import apply_tag
+        for set_name, ids in tags:
+            if set_name and ids:
+                apply_tag(repo_dir, set_name, ids)
+                applied.append(f"tag:{set_name}")
 
     command = command_for(target, type_, name, description, authors, sets)
     return {"applied": applied, "edited": tid, "command": command, "out": str(crate_path)}

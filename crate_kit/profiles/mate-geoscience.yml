@@ -195,6 +195,28 @@ optional_entities:
     fields:
       uri:         { property: url }
 
+# ── Tag sets (controlled vocab → website categories; TARGET_ARCHITECTURE §23) ─────────────────
+# Each set is a controlled vocabulary applied to an entity. Stored as schema.org DefinedTerm refs
+# (with inDefinedTermSet naming the set) on the target's `about`/`keywords`, selectable via a form
+# dropdown, grouped by the resolver into website categories. `terms` are inline for now (a minted
+# MATE-v2 DefinedTermSet later). Free-text scientific keywords stay on root.keywords (the Configure
+# form's keyword field) — controlled tags live in `about` to avoid clobbering it.
+tag_sets:
+  model_category:
+    label: "Model category"
+    target: root
+    property: about
+    website: model_category
+    multiple: true
+    terms:
+      - { id: published-in-study,    name: "Model published in study" }
+      - { id: community-benchmark,   name: "Community benchmark" }
+      - { id: attempted-reproduction, name: "Attempted reproduction" }
+      - { id: educational,           name: "Educational" }
+      - { id: forward-model,         name: "Forward model" }
+      - { id: inverse-model,         name: "Inverse model" }
+      - { id: other,                 name: "Other" }
+
 # ── Component types: the curated drop-down for `describe` ─────────────────────
 # ~5 useful types covering the 90%, each with a curated set of schema.org / CodeMeta
 # fields + prompts. Anything not here is still reachable via the escape hatch

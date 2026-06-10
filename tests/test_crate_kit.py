@@ -18,6 +18,7 @@ from crate_kit.contextual import _detect_type
 from crate_kit.from_issue import apply_issue
 from crate_kit.internal_enrich import internal_enrich
 from crate_kit.issue_form import refresh_forms
+from crate_kit.tags import apply_tag
 from crate_kit.profile import load_profile
 from crate_kit.readiness import report
 from crate_kit.vocab import load_vocab
@@ -209,6 +210,42 @@ def test_typed_form_generated_and_shapes_list_field():
         # a typed-form submission (no explicit type) must still list-shape programmingLanguage
         edit_entity(d, "model_code_inputs/", sets=["programmingLanguage=Python, C++"])
         assert _entity(d, "model_code_inputs/")["programmingLanguage"] == ["Python", "C++"]
+
+
+# ── tags (DefinedTerm binding) ───────────────────────────────────────────────
+
+def test_tag_applies_definedterm_to_about():
+    with repo({"a.txt": "x"}, profile="mate-geoscience") as d:
+        apply_tag(d, "model_category", ["community-benchmark", "Educational"])  # by id + by name
+        terms = [e for e in _graph(d) if e.get("@type") == "DefinedTerm"]
+        assert {t["termCode"] for t in terms} == {"community-benchmark", "educational"}
+        assert all(t["inDefinedTermSet"]["@id"] == "#tagset-model_category" for t in terms)
+        assert len(_entity(d, "./")["about"]) == 2           # referenced from root.about, not keywords
+
+
+def test_website_groups_tags_into_categories():
+    with repo({"a.txt": "x"}, profile="mate-geoscience") as d:
+        apply_tag(d, "model_category", ["forward-model"])
+        site = resolve_website(d, build=False)
+        assert site["categories"] == ["Forward model"]       # flat (Quarto filter)
+        assert site["tags"] == {"model_category": ["Forward model"]}   # grouped by set
+
+
+# ── immutability: version stamp + commit-pinned asset URLs ───────────────────
+
+def test_version_stamp_and_surfacing():
+    with repo({"a.txt": "x"}) as d:
+        assert _entity(d, "./").get("_crate_profile") == "base"
+        assert _entity(d, "./").get("_crate_profile_version") == 0
+        site = resolve_website(d, build=False)
+        assert site.get("crate_profile") == "base" and site.get("crate_version") == 0
+
+
+def test_raw_base_is_commit_pinned():
+    from crate_kit.website import _raw_base
+    assert _raw_base({"codeRepository": "https://github.com/me/r.git", "_git_commit": "abc123"}) \
+        == "https://raw.githubusercontent.com/me/r/abc123/"
+    assert _raw_base({"codeRepository": "https://github.com/me/r"}).endswith("/main/")   # fallback
 
 
 # ── built-in runner (no pytest) ──────────────────────────────────────────────
