@@ -12,8 +12,9 @@ version: 0
 
 # Vocabularies this profile imports (loaded by crate_kit/vocab.py). Terms become available as
 # `additionalType` roles to the role verb, the issue form, and validate. `communication` supplies
-# the website-asset roles (graphical-abstract, model-setup-diagram, figure, …) the website: block
+# the website-asset roles (graphical-abstract, setup-diagram, figure, …) the website: block
 # below references. Drop a vocab here to opt a discipline into its terms; the engine itself is generic.
+# (A discipline may re-skin a term's label/definition via `vocab_overrides:` — see mate-geoscience.)
 imports:
   - communication
 
@@ -182,7 +183,7 @@ readiness:
     - { type: ImageObject, label: "At least one image (any figure or screenshot)", action_role: figure }
     - { role: graphical-abstract, label: "A graphical abstract (the ideal hero image)", action_role: graphical-abstract }
     - { property: description,    label: "A plain-language description" }
-    - { role: model-setup-diagram, label: "A model-setup diagram", action_role: model-setup-diagram }
+    - { role: setup-diagram, label: "A setup diagram", action_role: setup-diagram }
 
 # Component types — schema.org ONLY (no CodeMeta terms like buildInstructions).
 component_types:
@@ -197,7 +198,7 @@ component_types:
   # is schema.org-for-software plus ~a dozen extra terms; it's a FIELD vocabulary, so it rides this
   # component_types mechanism (NOT additionalType). Any discipline extends the same way.
   SoftwareSourceCode:
-    label: "Software source code (your model's code / scripts)"
+    label: "Software source code (your code / scripts in this repo)"
     form: true            # generate an "Edit a software source code entity" form when one exists
     fields:
       programmingLanguage:  { label: "Language(s)", input: list }
@@ -256,5 +257,5 @@ website:
   # hero rule: the tagged graphical-abstract if present, ELSE fall back to any image — so a thin
   # contributor who tagged a single plain figure still gets a card hero (memory/minimum-asset-floor).
   graphical_abstract: { role: graphical-abstract, single: true, project: { url: "@id", caption: caption }, fallback: { type: ImageObject } }
-  setup_diagram:      { role: model-setup-diagram, single: true, project: { url: "@id", caption: caption } }
+  setup_diagram:      { role: setup-diagram, single: true, project: { url: "@id", caption: caption } }
   figures:      { role: figure, project: { url: "@id", caption: caption } }

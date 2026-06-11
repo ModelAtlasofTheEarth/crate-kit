@@ -74,6 +74,16 @@ def test_vocab_loadable_uri_vs_local():
     assert v["graphical-abstract"].type_value == "graphical-abstract"      # homeless → local name
 
 
+def test_vocab_overrides_reskin_label_not_identity():
+    # terms are GENERIC; a discipline re-skins label/definition via profile `vocab_overrides:`
+    base = load_vocab(load_profile())
+    geo = load_vocab(load_profile(name="mate-geoscience"))
+    assert base["setup-diagram"].label == "Setup diagram"                   # generic wording
+    assert geo["setup-diagram"].label == "Model setup diagram"             # MATE re-skin
+    assert geo["setup-diagram"].type_value == "setup-diagram"              # identity unchanged
+    assert geo["process-animation"].label == "Simulation animation"
+
+
 # ── role verb ────────────────────────────────────────────────────────────────
 
 def test_role_sets_type_text_and_additionaltype():
@@ -282,7 +292,7 @@ def test_type_dropdown_uses_labels_and_resolves_to_key():
     assert any("source code" in o.lower() for o in opts)          # human label shown
     assert "SoftwareSourceCode" not in opts                       # not the raw key
     body = ("### Which entity to edit\n\nmodel_code_inputs/\n\n"
-            "### Type tag\n\nSoftware source code (your model's code / scripts)\n")
+            "### Type tag\n\nSoftware source code (your code / scripts in this repo)\n")
     with repo({"model_code_inputs/run.py": "x=1"}) as d:
         apply_issue(d, body)
         assert "SoftwareSourceCode" in _entity(d, "model_code_inputs/")["@type"]   # label → key

@@ -69,4 +69,12 @@ def load_vocab(profile):
             continue
         for tname, raw in (data.get("terms") or {}).items():
             terms[tname] = Term(tname, raw or {})
+    # Discipline re-skins: profile `vocab_overrides:` swaps a term's human-facing label/definition
+    # (what forms and reports show) WITHOUT touching its identity (name/type_value — what crates
+    # store). E.g. MATE shows the generic `setup-diagram` as "Model setup diagram".
+    for tname, ov in (profile.get("vocab_overrides") or {}).items():
+        t = terms.get(tname)
+        if t and isinstance(ov, dict):
+            t.label = ov.get("label", t.label)
+            t.definition = ov.get("definition", t.definition)
     return terms

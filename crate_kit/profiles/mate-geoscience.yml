@@ -18,6 +18,17 @@ version: 0
 imports:
   - communication
 
+# Re-skin imported generic vocab terms with geoscience wording. Term IDENTITY stays generic
+# (crates store `setup-diagram`); only the human-facing label/definition shown by forms,
+# readiness reports, and the role dropdown change. (TARGET_ARCHITECTURE de-leak, option (a).)
+vocab_overrides:
+  setup-diagram:
+    label: "Model setup diagram"
+    definition: "A figure depicting the model's geometry, domain, mesh, or boundary/initial conditions."
+  process-animation:
+    label: "Simulation animation"
+    definition: "A time-evolving movie of the model's state or output — the simulation rendered over time."
+
 # Internal enrich (gap-fill, best-effort): derive metadata from repo content. `license` reads a
 # LICENSE/COPYING file → SPDX on the root — directly helps clear the open-license floor.
 internal_enrich:
@@ -182,7 +193,7 @@ readiness:
   encouraged:
     - { role: graphical-abstract, label: "A graphical abstract (the ideal hero image)", action_role: graphical-abstract }
     - { property: description,    label: "A plain-language description" }
-    - { role: model-setup-diagram, label: "A model-setup diagram", action_role: model-setup-diagram }
+    - { role: setup-diagram, label: "A model-setup diagram", action_role: setup-diagram }
 
 # ── Optional describe-entities (extensible add-ons; not required) ────────────
 # Declared here so the form/CLI can offer them; each maps to a contextual entity.

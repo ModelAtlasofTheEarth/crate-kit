@@ -68,8 +68,8 @@ _DATA_FIELDS = [
 
 
 _INTRO_CONTENT = (
-    "Tag a **local file** with the role it plays on the model's website — its *communicative "
-    "function* (graphical abstract, model-setup diagram, figure…). Pick the file and its role; "
+    "Tag a **local file** with the role it plays on this record's web page — its *communicative "
+    "function* (graphical abstract, setup diagram, figure…). Pick the file and its role; "
     "an action records the role on the crate (as `additionalType`, keeping the file's structural "
     "type) and stores your caption. The role decides where the asset appears on the page.")
 _CONTENT_DEFAULTS = {"name": "Tag website content (a file's role)", "title": "[tag content] (the file below)", "labels": ["crate-edit"]}
@@ -175,7 +175,7 @@ def _path_spec(dirs, include_root=True):
             "label": "Which entity to edit", "options": opts}
 
 
-_TYPE_HELP = ("Optional. *Source code* = your model's own code/scripts in this repo. "
+_TYPE_HELP = ("Optional. *Source code* = your own code/scripts in this repo. "
               "*Application* = a packaged tool/solver you used (often better added via 'Add a "
               "reference'). Picking a type unlocks its type-specific fields on a dedicated form.")
 
@@ -287,7 +287,8 @@ def build_typed_entity_form(profile, type_name, dirs=None, title=None, labels=No
              f"These fields come from its `{type_name}` type. Universal fields (name, description, "
              f"authors) live on *Edit a data entity*; richer editing is in Crate-O.")
     specs = [_path_spec(dirs, include_root=False)] + _typed_field_specs(profile, type_name)
-    meta = {"name": f"Edit a {label} entity", "title": "[edit data] ", "labels": ["crate-edit"]}
+    meta = {"name": f"Edit a {label} entity", "title": "[edit data] (the entity selected below)",
+            "labels": ["crate-edit"]}
     return _wrap(meta, intro, specs, title=title, labels=labels)
 
 
@@ -327,7 +328,7 @@ def refresh_forms(repo_dir, out_dir):
                      and e["@id"] != "./" and e["@id"].count("/") == 1)
     if (out_dir / "edit-data-entity.yml").exists():
         write_form(profile, str(out_dir / "edit-data-entity.yml"), kind="data",
-                   dirs=folders, title="[edit data] ")
+                   dirs=folders)        # default title = complete ("[edit data] (the entity…)")
         written.append("edit-data-entity.yml")
 
     asset_exts = _asset_exts(profile)
@@ -336,7 +337,7 @@ def refresh_forms(repo_dir, out_dir):
                   and e["@id"].lower().endswith(asset_exts))
     if (out_dir / "tag-website-content.yml").exists():
         write_form(profile, str(out_dir / "tag-website-content.yml"), kind="content",
-                   dirs=imgs, title="[tag content] ")
+                   dirs=imgs)
         written.append("tag-website-content.yml")
 
     for type_name, tcfg in (profile.get("component_types", {}) or {}).items():
@@ -348,7 +349,7 @@ def refresh_forms(repo_dir, out_dir):
             (out_dir / fn).unlink(missing_ok=True)     # no entities of this type → no form
             continue
         write_form(profile, str(out_dir / fn), kind="typed", component_type=type_name,
-                   dirs=ents, title="[edit data] ")
+                   dirs=ents)
         written.append(fn)
 
     return written

@@ -2,8 +2,12 @@
 # !! mate-vocabularies repo (communication.yml); re-vendor that file when it changes.
 # !! Pinned (not fetched live) so CI is hermetic — same reason profile contexts are vendored.
 # ─────────────────────────────────────────────────────────────────────────────
-# mate-communication — a controlled vocabulary for COMMUNICATING computational
-# scientific models: the assets and narrative artifacts a model website surfaces.
+# mate-communication — a controlled vocabulary for COMMUNICATING computational and
+# scientific work: the assets and narrative artifacts a project's web page surfaces.
+#
+# Terms are GENERIC (setup-diagram, not model-setup-diagram): term identity is shared across
+# disciplines; a profile re-skins the human-facing label/definition via `vocab_overrides:`
+# (e.g. MATE shows setup-diagram as "Model setup diagram"). Identity stays stable in crates.
 #
 # Each term is used as an `additionalType` refinement on an existing schema.org type
 # (it does NOT replace the structural @type). This file defines TERMS only; a profile
@@ -43,25 +47,25 @@ terms:
   # ── visual assets (additionalType on ImageObject / VideoObject) ──
   graphical-abstract:
     label: "Graphical abstract"
-    definition: "The single image that best summarises the whole model at a glance — the hero visual."
+    definition: "The single image that best summarises the whole work at a glance — the hero visual."
     refines: ImageObject
     cardinality: single
     text: caption
     alignment:
       jats: "abstract[@abstract-type='graphical']"   # JATS already names this; crosswalk, not import
 
-  model-setup-diagram:
-    label: "Model setup diagram"
-    definition: "A figure depicting the model's geometry, domain, mesh, or boundary/initial conditions."
+  setup-diagram:
+    label: "Setup diagram"
+    definition: "A figure depicting how the work was set up — geometry, domain, configuration, or initial/boundary conditions."
     refines: ImageObject
     cardinality: single
     text: caption
     alignment:
-      local: true   # homeless — no external term for a model-setup figure
+      local: true   # homeless — no external term for a setup figure
 
-  simulation-animation:
-    label: "Simulation animation"
-    definition: "A time-evolving movie of the model's state or output — the simulation rendered over time."
+  process-animation:
+    label: "Process animation"
+    definition: "A time-evolving movie of a process, simulation, or system rendered over time."
     refines: VideoObject
     cardinality: multiple
     text: caption
@@ -70,7 +74,7 @@ terms:
 
   key-result-figure:
     label: "Key result figure"
-    definition: "A figure presenting a primary scientific result of the model."
+    definition: "A figure presenting a primary scientific result of the work."
     refines: ImageObject
     cardinality: multiple
     text: caption
@@ -79,7 +83,7 @@ terms:
 
   figure:
     label: "Figure"
-    definition: "A supporting figure for the gallery — any model image not assigned a more specific term."
+    definition: "A supporting figure for the gallery — any image not assigned a more specific term."
     refines: ImageObject
     cardinality: multiple
     text: caption
@@ -89,7 +93,7 @@ terms:
   # ── narrative artifacts (additionalType on CreativeWork; or a root text property) ──
   plain-language-summary:
     label: "Plain-language summary"
-    definition: "A non-technical summary of the model and its findings for a general audience — distinct from the technical abstract."
+    definition: "A non-technical summary of the work and its findings for a general audience — distinct from the technical abstract."
     refines: CreativeWork
     cardinality: single
     text: description
@@ -98,7 +102,7 @@ terms:
 
   data-availability-statement:
     label: "Data availability statement"
-    definition: "A statement of what data and code the model provides and where it can be obtained."
+    definition: "A statement of what data and code are provided and where they can be obtained."
     refines: CreativeWork
     cardinality: single
     text: description

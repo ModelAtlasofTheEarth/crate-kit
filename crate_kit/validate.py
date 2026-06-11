@@ -60,7 +60,7 @@ def validate(repo_dir, reverse_engineer=False, profile=None, strict=False):
         if not item["met"]:
             warnings.append(f"encouraged (a thin page without it): {item['label']}")
 
-    # 2b) role cardinality — a `single` vocabulary role (graphical-abstract, model-setup-diagram)
+    # 2b) role cardinality — a `single` vocabulary role (graphical-abstract, setup-diagram)
     #     must not be carried by more than one entity. Structural error (the crate is inconsistent;
     #     the website can't pick a hero). Only known terms with single cardinality are checked.
     vocab = load_vocab(profile)
