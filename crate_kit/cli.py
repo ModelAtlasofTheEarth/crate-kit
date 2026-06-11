@@ -1,4 +1,4 @@
-"""mate CLI — the single engine behind both the GitHub Action and local conda runs."""
+"""crate CLI — the single engine behind both the GitHub Action and local runs."""
 import argparse
 import json
 import sys
@@ -19,12 +19,12 @@ def main(argv=None):
     b.add_argument("--reverse-engineer", action="store_true",
                    help="seed root metadata from an old-engine .metadata_trail/issue_dict.json")
 
-    r = sub.add_parser("render", help="render a repo's crate to model.qmd -> README.md + index.html (Tier-1 view)")
+    r = sub.add_parser("render", help="render a repo's crate to page.qmd -> README.md + index.html (Tier-1 view)")
     r.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
-    r.add_argument("-o", "--out", required=True, help="output directory for model.qmd + rendered files")
+    r.add_argument("-o", "--out", required=True, help="output directory for page.qmd + rendered files")
     r.add_argument("--reverse-engineer", action="store_true",
                    help="seed root metadata from an old-engine .metadata_trail/issue_dict.json")
-    r.add_argument("--no-quarto", action="store_true", help="write model.qmd but do not run quarto")
+    r.add_argument("--no-quarto", action="store_true", help="write page.qmd but do not run quarto")
 
     w = sub.add_parser("website", help="resolve the crate against the profile's website: schema -> a flat, portable website.json")
     w.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
@@ -50,7 +50,7 @@ def main(argv=None):
     tg.add_argument("--repo", default=".", help="repository directory (default: .)")
     tg.add_argument("--target", help="entity to tag (default: the set's profile target, usually root)")
 
-    v = sub.add_parser("validate", help="check a repo's crate meets the minimum M@TE model requirements")
+    v = sub.add_parser("validate", help="check a repo's crate against its profile (structure, required fields, readiness)")
     v.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
     v.add_argument("--reverse-engineer", action="store_true",
                    help="seed root metadata from an old-engine .metadata_trail/issue_dict.json")

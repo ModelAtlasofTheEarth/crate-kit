@@ -1,8 +1,8 @@
-"""validate: red/green check that a repo's crate meets the M@TE contract.
+"""validate: red/green check that a repo's crate meets its profile's contract.
 
-Rules come from the PROFILE (profiles/mate-geoscience.yml or a repo's .mate/profile.yml),
-not hard-coded: required root fields + `requires_for_website`. Render is permissive; the
-validator is the gate (TARGET_ARCHITECTURE.md §6c).
+Rules come from the PROFILE (a built-in like base/mate-geoscience, or the repo's own
+profile selector), not hard-coded: required root fields + readiness tiers. Render is
+permissive; the validator is the gate (TARGET_ARCHITECTURE.md §6c).
 """
 from pathlib import Path
 from urllib.parse import unquote

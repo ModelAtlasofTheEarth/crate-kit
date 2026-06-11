@@ -1,4 +1,4 @@
-"""render: project a crate into a Quarto `model.qmd`, then to README.md + index.html.
+"""render: project a crate into a Quarto `page.qmd`, then to README.md + index.html.
 
 Tier-1 (zero-config) view: an Overview from the root entity, plus one panel-tab per
 top-level directory, listing the files that directory actually contains. No view-spec
@@ -27,12 +27,18 @@ def _is_image(file_id):
     return Path(file_id).suffix.lower() in IMG_EXT
 
 
+def _is_file(e):
+    """Role-tagged files are multi-typed (["File", "ImageObject"]) — match list-aware."""
+    t = e.get("@type")
+    return t == "File" or (isinstance(t, list) and "File" in t)
+
+
 def _collect_images(doc, repo_dir, out_dir):
     """Copy image File entities into out_dir/assets/ and return [(label, relative-src)]."""
     assets = Path(out_dir) / "assets"
     images = []
     for e in doc["@graph"]:
-        if e.get("@type") != "File":
+        if not _is_file(e):
             continue
         i = e.get("@id", "")
         if not i or i.startswith(("http", "#", "./")) or not _is_image(i):
@@ -80,7 +86,7 @@ def _sections(graph):
     Images are shown embedded in the Figures tab instead of listed here."""
     sections = {}
     for e in graph:
-        if e.get("@type") != "File":
+        if not _is_file(e):
             continue
         i = e.get("@id", "")
         if not i or i.startswith(("http", "#", "./")) or _is_image(i):
@@ -94,12 +100,11 @@ def _sections(graph):
 
 
 def _order(name):
-    # model_* content first, repository-root files last, others in between
-    if name.startswith("model_"):
-        return (0, name)
+    # directories first (alphabetical), repository-root files last. (Domain ordering — e.g.
+    # code-and-inputs before outputs — is a profile/view-spec concern, not the engine's.)
     if name.startswith("("):
-        return (2, name)
-    return (1, name)
+        return (1, name)
+    return (0, name)
 
 
 def build_qmd(doc, repo_name, images=None):
@@ -169,7 +174,7 @@ def build_qmd(doc, repo_name, images=None):
                 lines.append(f"- `{e['@id']}` — {size}")
             lines.append("")
         if external:
-            lines.append("### Model output data (external)\n")
+            lines.append("### External data (hosted elsewhere)\n")
             for e in external:
                 lines.append(f"- **{scalar(e.get('name')) or 'external dataset'}** — hosted externally, not in this repo")
                 if e.get("@id"):
@@ -180,7 +185,7 @@ def build_qmd(doc, repo_name, images=None):
         lines.append(":::\n")
 
     lines.append("---\n")
-    lines.append("_Page generated from `ro-crate-metadata.json` by `mate render` "
+    lines.append("_Page generated from `ro-crate-metadata.json` by `crate render` "
                  "(Tier-1 view). Do not edit by hand._")
     return "\n".join(lines)
 
@@ -192,7 +197,7 @@ def render(repo, out_dir, reverse_engineer=False, run_quarto=True):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     images = _collect_images(doc, Path(repo).resolve(), out)
-    qmd_path = out / "model.qmd"
+    qmd_path = out / "page.qmd"
     qmd_path.write_text(build_qmd(doc, repo_name, images))
 
     result = {"qmd": str(qmd_path), "quarto": None, "outputs": []}
@@ -200,16 +205,16 @@ def render(repo, out_dir, reverse_engineer=False, run_quarto=True):
     if run_quarto:
         quarto = shutil.which("quarto")
         if not quarto:
-            result["quarto"] = "not found on PATH — wrote model.qmd only"
+            result["quarto"] = "not found on PATH — wrote page.qmd only"
             return result
         proc = subprocess.run(
-            [quarto, "render", "model.qmd"], cwd=str(out),
+            [quarto, "render", "page.qmd"], cwd=str(out),
             capture_output=True, text=True,
         )
         result["quarto"] = f"exit {proc.returncode}"
         if proc.returncode != 0:
             result["quarto_stderr"] = proc.stderr[-1500:]
         result["outputs"] = sorted(
-            p.name for p in out.iterdir() if p.name != "model.qmd"
+            p.name for p in out.iterdir() if p.name != "page.qmd"
         )
     return result

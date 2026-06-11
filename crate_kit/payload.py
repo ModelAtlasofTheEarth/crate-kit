@@ -1,6 +1,6 @@
 """link-payload: represent data that does NOT live in the repo as an RO-Crate external entity.
 
-The geoscience case: model_output_data is too big for git and lives on NCI/Zenodo. The crate
+The motivating case: output data too big for git lives on an archive (NCI/Zenodo). The crate
 points at it (the external/remote-entity feature that motivated RO-Crate) instead of holding it.
 
 Driven by a `payload:` block in the authored `mate:` metadata, e.g.:
@@ -14,8 +14,8 @@ post-processing step on the generated crate dict, so it stays independent of roc
 from .meta import read_mate_block
 
 
-def _adapter(p):
-    """Return (entity_dict, backing_path) for a payload block."""
+def _adapter(p, default_backs=None):
+    """Return (entity_dict, backing_path, backend) for a payload block."""
     backend = (p.get("backend") or "url").lower()
 
     if backend == "zenodo":
@@ -42,11 +42,13 @@ def _adapter(p):
     if p.get("license"):
         entity["license"] = {"@id": str(p["license"])}
 
-    backing = p.get("backs") or p.get("path") or "model_output_data/"
+    # which local directory entity this payload backs — a profile knob (e.g. the geoscience
+    # profile's `payload.default_backs`), NOT an engine default. None → link from the root only.
+    backing = p.get("backs") or p.get("path") or default_backs
     return entity, backing, backend
 
 
-def add_payload(doc, repo_dir):
+def add_payload(doc, repo_dir, profile=None):
     """Append external-payload entities to the crate graph and link them. Returns added @ids."""
     block = read_mate_block(repo_dir)
     payloads = block.get("payload") if block else None
@@ -55,15 +57,17 @@ def add_payload(doc, repo_dir):
     if isinstance(payloads, dict):
         payloads = [payloads]
 
+    default_backs = ((profile or {}).get("payload") or {}).get("default_backs")
     added = []
     graph = doc["@graph"]
     by_id = {e.get("@id"): e for e in graph}
 
     for p in payloads:
-        entity, backing, _ = _adapter(p)
+        entity, backing, _ = _adapter(p, default_backs)
         if not entity["@id"]:
             continue
-        entity["about"] = {"@id": backing}
+        if backing:
+            entity["about"] = {"@id": backing}
         graph.append(entity)
         added.append(entity["@id"])
 

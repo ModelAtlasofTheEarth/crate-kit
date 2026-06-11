@@ -364,7 +364,11 @@ def _build_fresh(repo_dir, reverse_engineer, git_opts):
     # 4) external data payloads (NCI/Zenodo/…) as remote entities. In normal operation these
     #    live IN the crate (added by the issue form / editor) and are merge-preserved; only the
     #    old-engine migration still lifts them from a front-matter seed.
-    payload_ids = add_payload(doc, repo_dir) if reverse_engineer else []
+    if reverse_engineer:
+        from .profile import load_profile
+        payload_ids = add_payload(doc, repo_dir, profile=load_profile(repo_dir))
+    else:
+        payload_ids = []
 
     summary = {
         "repo": str(repo_dir),

@@ -172,6 +172,7 @@ open_licenses: [CC-BY-4.0, CC-BY-SA-4.0, CC0-1.0, AGPL-3.0, GPL-3.0, LGPL-3.0, M
 open_pid_hosts: [doi.org, zenodo.org, nci.org.au]
 
 readiness:
+  title: "Model readiness"          # report/status-issue heading (engine default: "Readiness")
   required:
     - { property: name,    label: "A model title" }
     - { open_license: true, label: "An open license (CC-BY, CC0, MIT, GPL, Apache, …)" }

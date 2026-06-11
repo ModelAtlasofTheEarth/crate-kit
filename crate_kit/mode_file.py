@@ -32,7 +32,7 @@ def build_mode(profile):
     fields = (profile.get("root", {}) or {}).get("fields", {})
 
     # base inputs so ANY Dataset (incl. subdirectories) can be named/described in the editor
-    dataset_inputs = [_input("name", "Name of this dataset / model"),
+    dataset_inputs = [_input("name", "Name of this dataset"),
                       _input("description", "What it is / how it was made")]
     seen = {"name", "description"}
     for fname, fdef in fields.items():
@@ -57,11 +57,12 @@ def build_mode(profile):
                             _input("encodingFormat", "Format")]},
     }
 
+    pname = profile.get("profile", "base")
     return {
-        "metadata": {"name": f"M@TE ({profile.get('profile', 'mate')})",
-                     "description": "M@TE model profile for Crate-O",
-                     "version": profile.get("version", 0), "license": "GPLv3.0", "author": "M@TE"},
-        "rootDataEntity": [{"type": ["Dataset"], "conformsToUri": [], "description": "A M@TE model"}],
+        "metadata": {"name": f"crate-kit ({pname})",
+                     "description": f"Crate-O mode generated from the '{pname}' profile by crate-kit",
+                     "version": profile.get("version", 0), "license": "GPLv3.0", "author": "crate-kit"},
+        "rootDataEntity": [{"type": ["Dataset"], "conformsToUri": [], "description": "The root dataset this crate describes"}],
         "lookup": {},
         "classes": classes,
     }

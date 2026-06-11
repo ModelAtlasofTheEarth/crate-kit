@@ -1,4 +1,4 @@
-"""readiness: the catalogue traffic-light — what a repo still needs to be a viable MATE model.
+"""readiness: the catalogue traffic-light — what a repo still needs to clear its profile's floor.
 
 The floor is DERIVED, not decreed (see memory/minimum-asset-floor.md): the catalogue card must be
 able to render, so the required tier is "title + creators + license + ≥1 image". A graphical
@@ -154,7 +154,9 @@ def report(repo_dir, repo_url=None, build=True):
 
     items = ev["required"] + ev["encouraged"]
     eligible = all(i["met"] for i in ev["required"])
-    return {"eligible": eligible, "items": items,
+    # report heading is a profile knob (e.g. geoscience says "Model readiness"); generic default
+    title = (profile.get("readiness") or {}).get("title") or "Readiness"
+    return {"eligible": eligible, "items": items, "title": title,
             "required_met": sum(i["met"] for i in ev["required"]),
             "required_total": len(ev["required"])}
 
@@ -163,7 +165,7 @@ def report_markdown(rep):
     """Render a report (from report()) as a GitHub-flavoured checklist — used for the Actions job
     summary and a model-status issue. Required gaps are 🔴, encouraged 🟡, met ✅; each gap shows its
     pre-filled fix-it link."""
-    lines = ["## 📋 Model readiness", ""]
+    lines = [f"## 📋 {rep.get('title') or 'Readiness'}", ""]
     if rep["eligible"]:
         lines += ["**✅ Catalogue-eligible** — the required floor is met.", ""]
     else:

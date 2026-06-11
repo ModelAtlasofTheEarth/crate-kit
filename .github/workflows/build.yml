@@ -25,10 +25,22 @@ on:
         type: string
         required: false
         default: ""
+      status_issue_title:
+        # title of the readiness status issue (a GitHub-surface knob — the caller brands it,
+        # e.g. "📋 Model readiness" for MATE; the report BODY heading comes from the profile)
+        type: string
+        required: false
+        default: "📋 Readiness"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Serialize builds per repo: rapid-fire pushes otherwise interleave and the LAST step's
+    # `git push` loses the race (observed: 3 pushes in 60s → one build's bot commit rejected).
+    # No cancel — every push still gets its build, they just queue.
+    concurrency:
+      group: crate-build-${{ github.repository }}
+      cancel-in-progress: false
     # Permissions are set by the CALLER (a reusable workflow can't request more than the caller
     # grants, or the run fails to start). Push callers grant `contents: write`; the on-issue
     # caller also grants `issues: write` for the comment step.
@@ -48,7 +60,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh label create crate-edit --repo "${{ github.repository }}" \
-            --color BFD4F2 --description "M@TE crate edit (issue forms)" --force || true
+            --color BFD4F2 --description "crate edit (issue forms)" --force || true
 
       - uses: mamba-org/setup-micromamba@v2
         with:
@@ -104,16 +116,16 @@ jobs:
           crate readiness . --repo-url "${{ github.server_url }}/${{ github.repository }}" --markdown \
             >> "$GITHUB_STEP_SUMMARY" || true
 
-      - name: maintain the "Model readiness" status issue (best-effort; needs issues:write)
+      - name: maintain the readiness status issue (best-effort; needs issues:write)
         if: ${{ !endsWith(github.repository, '-template') }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          TITLE: ${{ inputs.status_issue_title }}
         shell: bash -el {0}
         run: |
           crate readiness . --repo-url "$REPO_URL" --markdown > /tmp/readiness.md || exit 0
-          TITLE="📋 Model readiness"
           NUM=$(gh issue list --state open --search "in:title $TITLE" --json number,title \
                 --jq ".[] | select(.title==\"$TITLE\") | .number" 2>/dev/null | head -1 || true)
           if [ -n "$NUM" ]; then
@@ -149,7 +161,12 @@ jobs:
             echo "nothing to commit"
           else
             git commit -m "Update crate + issue form [skip ci]"
-            git push
+            # main can move mid-build (a user push); rebase our bot commit onto it and retry.
+            # A conflict (rare: only if the moved main also rewrote the crate) fails loudly.
+            if ! git push; then
+              git pull --rebase origin "${GITHUB_REF_NAME:-main}"
+              git push
+            fi
           fi
 
       - name: comment on the submission issue
