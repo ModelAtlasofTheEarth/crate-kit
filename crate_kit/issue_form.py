@@ -35,21 +35,30 @@ _LIST_HELP = "Comma-separated."
 _ROOT_OPT = "(the dataset itself / root)"
 _TYPE_KEEP = "(keep current)"
 
+# The ONE door rule, repeated verbatim on every form (rule R2 of the form grammar): the first
+# question is always "where is it?", and the answer picks the form. Keeping the sentence identical
+# everywhere is the point — users learn it once.
+_DOOR_RULE = (
+    "\n\n> **Where is it?** *In this repository* → it's a **data entity** (use *Edit a data "
+    "entity*, or its typed forms). *Hosted elsewhere* → it's a **reference** (use *Add a "
+    "contextual entity*).")
+
 _INTRO_CONFIGURE = (
     "Configure the dataset as a whole — title, description, license, creators. *(You can leave the "
     "issue title above as-is — it's just a marker; the dataset's title is the field below.)* On "
     "submit, an action writes these onto the crate's **root** entity (`ro-crate-metadata.json`, the "
-    "single source of truth). **Edit the crate afterwards (CLI / Crate-O), not by reopening this issue.**")
+    "single source of truth). **Edit the crate afterwards (CLI / Crate-O), not by reopening this issue.**"
+    + _DOOR_RULE)
 _INTRO_DATA = (
     "Edit metadata for one **local file or folder** in this dataset (a *data entity*). Pick it "
     "above, then fill only what you want to set (blank = leave as-is). On submit, an action writes "
-    "it into the crate. Type-specific fields and richer editing live in **Crate-O**.")
+    "it into the crate. Picking a type under *What is it?* unlocks that type's fields on a "
+    "dedicated form after the next build." + _DOOR_RULE)
 _INTRO_CONTEXTUAL = (
-    "Add a **remote** thing this dataset points to (a *contextual entity*) — a person, a "
-    "publication, the software you used, a funder, or large data hosted elsewhere — by its "
-    "identifier (DOI / ORCID / ROR / URL). An action mints it in the crate, links it to the "
-    "dataset, and `enrich` fills in the details. *(Local things — files/folders — are data "
-    "entities; use the other forms for those.)*")
+    "Add a thing this dataset points to (a *contextual entity*) — a person, a publication, the "
+    "software you used, a funder, or large data hosted elsewhere — by its identifier "
+    "(DOI / ORCID / ROR / URL). An action mints it in the crate, links it to the dataset, and "
+    "`enrich` fills in the details." + _DOOR_RULE)
 
 # `title` is a COMPLETE default for the GitHub issue-title box (not just the gate prefix) — so the
 # box looks done and isn't mistaken for a second "title" field. The workflow only needs the prefix.
@@ -71,7 +80,8 @@ _INTRO_CONTENT = (
     "Tag a **local file** with the role it plays on this record's web page — its *communicative "
     "function* (graphical abstract, setup diagram, figure…). Pick the file and its role; "
     "an action records the role on the crate (as `additionalType`, keeping the file's structural "
-    "type) and stores your caption. The role decides where the asset appears on the page.")
+    "type) and stores your caption. The role decides where the asset appears on the page."
+    + _DOOR_RULE)
 _CONTENT_DEFAULTS = {"name": "Tag website content (a file's role)", "title": "[tag content] (the file below)", "labels": ["crate-edit"]}
 
 
@@ -175,9 +185,9 @@ def _path_spec(dirs, include_root=True):
             "label": "Which entity to edit", "options": opts}
 
 
-_TYPE_HELP = ("Optional. *Source code* = your own code/scripts in this repo. "
-              "*Application* = a packaged tool/solver you used (often better added via 'Add a "
-              "reference'). Picking a type unlocks its type-specific fields on a dedicated form.")
+_TYPE_HELP = ("Optional — what this file/folder IS. Picking a type unlocks its type-specific "
+              "fields on a dedicated form after the next build. (A packaged tool you merely "
+              "*used* lives elsewhere → add it via *Add a contextual entity*.)")
 
 
 def _type_spec(profile):
@@ -185,12 +195,15 @@ def _type_spec(profile):
     if not types:
         return None
     # options are the human LABELS (clearer than the schema keys, e.g. SoftwareSourceCode); a
-    # label->key map lets the parser resolve the pick back to the @type. Help text disambiguates
-    # the choice at the decision point (the App-vs-SourceCode confusion).
+    # label->key map lets the parser resolve the pick back to the @type. The dropdown offers only
+    # types a LOCAL file/folder can BE — a type opts out of the local door with `local: false`
+    # (e.g. SoftwareApplication: a tool you used is a reference). The typemap stays COMPLETE so
+    # the parser still resolves older submissions that picked a since-hidden label.
     label_to_key = {(tdef.get("label") or k): k for k, tdef in types.items()}
+    offered = [lbl for lbl, k in label_to_key.items() if (types[k] or {}).get("local", True)]
     return {"id": "entity_type", "role": "type", "input": "dropdown", "required": False,
-            "label": "Type tag", "help": _TYPE_HELP,
-            "options": [_TYPE_KEEP] + list(label_to_key), "typemap": label_to_key}
+            "label": "What is it?", "help": _TYPE_HELP,
+            "options": [_TYPE_KEEP] + offered, "typemap": label_to_key}
 
 
 def parser_specs(profile):
@@ -284,8 +297,10 @@ def build_typed_entity_form(profile, type_name, dirs=None, title=None, labels=No
     type's `component_types`. Shares the `[edit data]` gate, so it applies through the same path."""
     label = ((profile.get("component_types", {}) or {}).get(type_name, {}) or {}).get("label", type_name)
     intro = (f"Edit the **{label}**-specific metadata for one entity below (blank = leave as-is). "
-             f"These fields come from its `{type_name}` type. Universal fields (name, description, "
-             f"authors) live on *Edit a data entity*; richer editing is in Crate-O.")
+             f"These fields come from its `{type_name}` type; the list below includes every "
+             f"`{type_name}` entity however it arrived (typed local file/folder, or added as a "
+             f"reference). Universal fields (name, description, authors) live on *Edit a data "
+             f"entity*; richer editing is in Crate-O." + _DOOR_RULE)
     specs = [_path_spec(dirs, include_root=False)] + _typed_field_specs(profile, type_name)
     meta = {"name": f"Edit a {label} entity", "title": "[edit data] (the entity selected below)",
             "labels": ["crate-edit"]}

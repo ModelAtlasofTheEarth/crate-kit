@@ -188,8 +188,15 @@ jobs:
             } > /tmp/comment.md
           else
             CMD=$(cat /tmp/crate_command.txt 2>/dev/null || true)
+            # R4 (form grammar): the two-step is never silent — if this edit set a type whose
+            # typed form exists after this build's refresh, the engine names it (next_form).
+            NEXT=$(python3 -c "import json;print(json.load(open('/tmp/crate_result.json')).get('next_form') or '')" 2>/dev/null || true)
             {
               echo "✅ Applied to \`ro-crate-metadata.json\` — the single source of truth. Edit the crate (CLI / Crate-O), not this issue."
+              if [ -n "$NEXT" ]; then
+                echo ""
+                echo "⏭ **Next step (optional):** type-specific fields are on the **${NEXT}** form, available in the [issue chooser](${{ github.server_url }}/${{ github.repository }}/issues/new/choose) once this build finishes refreshing the forms."
+              fi
               if [ -n "$CMD" ]; then
                 printf '\nThe command-line equivalent (run it locally next time to skip the round-trip):\n\n'
                 printf '```\n%s\n```\n' "$CMD"

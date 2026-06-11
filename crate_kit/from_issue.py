@@ -31,6 +31,21 @@ def parse_issue_body(body):
     return out
 
 
+def _next_form(profile, type_):
+    """R4 of the form grammar — the bot narrates the two-step. If the applied edit gave an entity a
+    @type whose component type spawns a typed form (`form: true`), return that form's NAME (exactly
+    what `refresh_forms` will put in the issue chooser after this build) so the workflow comment
+    can point the user at the next step instead of leaving it silent."""
+    if not type_:
+        return None
+    ct = profile.get("component_types", {}) or {}
+    for t in (type_ if isinstance(type_, list) else [type_]):
+        tcfg = ct.get(t) or {}
+        if tcfg.get("form"):
+            return f"Edit a {tcfg.get('label', t)} entity"
+    return None
+
+
 def apply_issue(repo_dir, body, out_path=None):
     repo_dir = Path(repo_dir).resolve()
     profile = load_profile(repo_dir)
@@ -49,7 +64,8 @@ def apply_issue(repo_dir, body, out_path=None):
         if res.get("error"):
             return res
         return {"applied": [res.get("link")], "edited": res.get("added"),
-                "command": res.get("command"), "out": str(repo_dir / "ro-crate-metadata.json")}
+                "command": res.get("command"), "next_form": _next_form(profile, res.get("type")),
+                "out": str(repo_dir / "ro-crate-metadata.json")}
 
     # Content form? (the "What is this file?" role field is filled) → tag a website role.
     role_spec = next((s for s in speclist if s.get("role") == "role"), None)
@@ -135,4 +151,5 @@ def apply_issue(repo_dir, body, out_path=None):
                 applied.append(f"tag:{set_name}")
 
     command = command_for(target, type_, name, description, authors, sets)
-    return {"applied": applied, "edited": tid, "command": command, "out": str(crate_path)}
+    return {"applied": applied, "edited": tid, "command": command,
+            "next_form": _next_form(profile, type_), "out": str(crate_path)}

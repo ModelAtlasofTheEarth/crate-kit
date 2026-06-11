@@ -186,9 +186,17 @@ readiness:
     - { role: setup-diagram, label: "A setup diagram", action_role: setup-diagram }
 
 # Component types — schema.org ONLY (no CodeMeta terms like buildInstructions).
+# Two knobs make the type system uniform across the forms (the form-consistency rules):
+#   form: true   — spawn an "Edit a <type> entity" form when entities of this type exist (the
+#                  uniform "deepening" step: pick a type on the data form → next build offers
+#                  its type-specific fields). Every type with fields a form can carry opts in.
+#   local: false — this type is NOT offered on the data form's "What is it?" dropdown (it isn't
+#                  something a local file/folder can BE); it enters via the contextual form
+#                  (a reference), and its typed form still serves those entities.
 component_types:
   Dataset:
     label: "Dataset"
+    form: true            # folders ARE Datasets — picking/holding the type unlocks these fields
     fields:
       encodingFormat:       { label: "File format(s)", input: list, help: "e.g. application/x-hdf5, text/csv" }
       variableMeasured:     { label: "Variables", input: list }
@@ -214,6 +222,9 @@ component_types:
   SoftwareApplication:
     label: "Software application (a packaged tool / solver you used)"
     form: true
+    local: false          # a tool you USED is a reference (contextual form), not a local file —
+                          # keeps the data form's dropdown to things in the repo. The typed form
+                          # still serves contextual-minted applications.
     fields:
       softwareVersion:      { label: "Version", input: text }
       operatingSystem:      { label: "Operating system", input: text }
@@ -225,6 +236,8 @@ component_types:
       referencePublication: { label: "Reference publication (DOI)", input: text, vocab: codemeta }
   ImageObject:
     label: "Image / figure"
+    # deliberately NO `form:` — the "Tag website content" form IS an image's deepening step
+    # (role + caption, which is what an image needs); a second typed form would compete with it.
     fields:
       caption:              { label: "Caption", input: text }
       encodingFormat:       { label: "Format", input: text }

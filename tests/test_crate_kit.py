@@ -292,10 +292,75 @@ def test_type_dropdown_uses_labels_and_resolves_to_key():
     assert any("source code" in o.lower() for o in opts)          # human label shown
     assert "SoftwareSourceCode" not in opts                       # not the raw key
     body = ("### Which entity to edit\n\nmodel_code_inputs/\n\n"
-            "### Type tag\n\nSoftware source code (your code / scripts in this repo)\n")
+            "### What is it?\n\nSoftware source code (your code / scripts in this repo)\n")
     with repo({"model_code_inputs/run.py": "x=1"}) as d:
         apply_issue(d, body)
         assert "SoftwareSourceCode" in _entity(d, "model_code_inputs/")["@type"]   # label → key
+
+
+# ── form grammar: door rule, local:false, uniform deepening, next-step hint ──
+
+def test_door_rule_on_every_form():
+    # R2: the SAME "Where is it?" sentence opens every form — users learn it once
+    from crate_kit.issue_form import (build_configure_form, build_contextual_form,
+                                      build_content_form, _DOOR_RULE)
+    p = load_profile()
+    forms = [build_configure_form(p), build_data_entity_form(p), build_contextual_form(p),
+             build_content_form(p), build_typed_entity_form(p, "Dataset")]
+    for f in forms:
+        intro = f["body"][0]["attributes"]["value"]
+        assert _DOOR_RULE.strip() in intro, f["name"]
+
+
+def test_local_false_hidden_from_dropdown_but_still_parses():
+    # R3: SoftwareApplication is a reference, not a local thing → off the data form's "What is
+    # it?" dropdown; the typemap stays complete so an older submission still resolves.
+    p = load_profile()
+    data = build_data_entity_form(p, dirs=["data/"])
+    typ = next(b for b in data["body"] if b.get("id") == "entity_type")
+    opts = typ["attributes"]["options"]
+    assert not any("packaged tool" in o for o in opts)            # local:false → hidden
+    assert any("source code" in o.lower() for o in opts)          # local types still offered
+    body = ("### Which entity to edit\n\ndata/\n\n"
+            "### What is it?\n\nSoftware application (a packaged tool / solver you used)\n")
+    with repo({"data/tool.bin": "x"}) as d:
+        apply_issue(d, body)                                       # old pick still applies
+        assert "SoftwareApplication" in _entity(d, "data/")["@type"]
+
+
+def test_dataset_typed_form_spawns():
+    # R3 uniform deepening: Dataset has form:true — folders ARE Datasets, so the typed form
+    # (encodingFormat, variableMeasured, …) exists whenever the repo has a folder.
+    with repo({"data/a.txt": "x"}) as d:
+        tdir = d / ".github" / "ISSUE_TEMPLATE"
+        tdir.mkdir(parents=True)
+        written = refresh_forms(d, tdir)
+        assert "edit-dataset-entity.yml" in written
+        import yaml as _yaml
+        form = _yaml.safe_load((tdir / "edit-dataset-entity.yml").read_text())
+        labels = [b["attributes"]["label"] for b in form["body"] if b.get("id", "").startswith("f_")]
+        assert "File format(s)" in labels                          # the type's own fields
+
+
+def test_next_form_hint_emitted():
+    # R4: the two-step is narrated — setting a form:true type names the follow-up form
+    body = ("### Which entity to edit\n\ndata/\n\n"
+            "### What is it?\n\nSoftware source code (your code / scripts in this repo)\n")
+    with repo({"data/run.py": "x=1"}) as d:
+        res = apply_issue(d, body)
+        assert res["next_form"] == "Edit a Software source code (your code / scripts in this repo) entity"
+    # contextual door too: a github software reference detects SoftwareSourceCode (form: true)
+    ctx = ("### What are you adding?\n\nSoftware used\n\n"
+           "### Reference (DOI / ORCID / ROR / URL)\n\nhttps://github.com/underworldcode/underworld2\n")
+    with repo({"a.txt": "x"}) as d:
+        res = apply_issue(d, ctx)
+        assert res["next_form"] == "Edit a Software source code (your code / scripts in this repo) entity"
+    # tagging an image must NOT hint (ImageObject has no typed form — the content form IS it)
+    tag = ("### Which entity to edit\n\nfigures/a.png\n\n"
+           "### What is this file?\n\nFigure\n")
+    with repo({"figures/a.png": "x"}) as d:
+        res = apply_issue(d, tag)
+        assert res.get("next_form") is None
 
 
 # ── DOI canonicalisation (dedup across the two publication entry points) ──────

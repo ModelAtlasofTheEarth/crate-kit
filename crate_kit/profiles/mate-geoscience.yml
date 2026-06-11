@@ -234,9 +234,14 @@ tag_sets:
 # fields + prompts. Anything not here is still reachable via the escape hatch
 # (`mate describe ... --type <anySchemaType> --set <anyProperty>=<value>`) — full
 # flexibility, so nothing is boxed in. Terms resolve to schema.org / CodeMeta.
+# Form knobs (same contract as base): `form: true` spawns an "Edit a <type> entity" form when
+# entities exist; `local: false` keeps a type off the data form's "What is it?" dropdown (it
+# enters by reference via the contextual form). ImageObject has neither — the "Tag website
+# content" form IS an image's deepening (role + caption).
 component_types:
   Dataset:
     label: "Dataset — data / model inputs or outputs"
+    form: true
     fields:
       encodingFormat:      { label: "File format(s)", input: list, help: "e.g. application/x-hdf5, image/tiff" }
       variableMeasured:    { label: "Variables", input: list, help: "e.g. temperature, velocity, viscosity" }
@@ -244,6 +249,7 @@ component_types:
       contentSize:         { label: "Total size", input: text, help: "e.g. 40 GB" }
   SoftwareSourceCode:
     label: "Software source code — model code / scripts"
+    form: true
     fields:
       programmingLanguage: { label: "Language(s)", input: list }
       runtimePlatform:     { label: "Runtime platform", input: text, help: "e.g. Python 3.11, MPI" }
@@ -252,6 +258,8 @@ component_types:
       codeRepository:      { label: "Source repository", input: text }
   SoftwareApplication:
     label: "Software application / framework — e.g. Underworld, ASPECT"
+    form: true
+    local: false          # a framework you USED is a reference (contextual form), not a local file
     fields:
       softwareVersion:     { label: "Version", input: text }
       operatingSystem:     { label: "Operating system", input: text }
