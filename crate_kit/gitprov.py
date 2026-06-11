@@ -67,21 +67,30 @@ def git_provenance(repo_dir, opts=None):
 
 
 def renames_since(repo_dir, old_commit):
-    """Map {new_path: old_path} for files git detects as RENAMED between `old_commit` and HEAD.
+    """Map {new_id: old_id} for files git detects as RENAMED between `old_commit` and HEAD —
+    in crate **@id space** (URL-quoted, exactly as ro-crate-py mints File @ids), so the merge
+    can look entities up directly. A raw-path map silently misses any filename needing quoting
+    ("Picture 2.jpg" vs "Picture%202.jpg" — found by the CI smoke).
 
     Feeds rename-aware merge (build_crate._merge): authored properties on a File entity follow
     the file across a rename instead of being silently dropped as delete+add — the crate already
     stamps the commit it last described (`_git_commit`), so the previous build is the diff base.
-    Best-effort: {} if not a git repo, the commit is unknown (e.g. force-push), or git is absent.
+    `-z` (NUL-separated) keeps git from C-quoting unusual paths. Best-effort: {} if not a git
+    repo, the commit is unknown (e.g. force-push), or git is absent.
     """
+    from urllib.parse import quote
     if not old_commit:
         return {}
-    out = _git(repo_dir, "diff", "--name-status", "--find-renames", old_commit, "HEAD")
+    out = _git(repo_dir, "diff", "--name-status", "--find-renames", "-z", old_commit, "HEAD")
     if not out:
         return {}
     renames = {}
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) == 3 and parts[0].startswith("R"):
-            renames[parts[2]] = parts[1]          # new path -> old path
+    toks = out.split("\0")
+    i = 0
+    while i < len(toks) and toks[i]:
+        status = toks[i]
+        npaths = 2 if status[:1] in ("R", "C") else 1     # rename/copy records carry two paths
+        if status.startswith("R") and i + 2 < len(toks):
+            renames[quote(toks[i + 2])] = quote(toks[i + 1])   # new @id -> old @id
+        i += 1 + npaths
     return renames

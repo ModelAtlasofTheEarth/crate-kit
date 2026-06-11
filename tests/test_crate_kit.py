@@ -448,19 +448,21 @@ def test_manifest_carries_and_refreshes_sha256():
 
 
 def test_rename_preserves_authored_props_and_repins_commit():
+    # the filename has a SPACE on purpose: crate @ids are URL-quoted ("Picture%202.jpg") while
+    # git reports raw paths — the rename map must be in @id space (CI-smoke regression)
     d = Path(tempfile.mkdtemp())
     try:
-        (d / "fig.png").write_text("pixels")
+        (d / "fig 1.png").write_text("pixels")
         _sh_git(d, "init", "-q"); _sh_git(d, "add", "."); _sh_git(d, "commit", "-qm", "one")
         build_crate(d, out_path=str(d / "ro-crate-metadata.json"), merge=True)
-        edit_entity(d, "fig.png", description="The setup figure")
-        set_role(d, "fig.png", "figure")                               # authored role too
-        _sh_git(d, "mv", "fig.png", "figure_01.png"); _sh_git(d, "commit", "-qm", "two")
+        edit_entity(d, "fig%201.png", description="The setup figure")
+        set_role(d, "fig%201.png", "figure")                           # authored role too
+        _sh_git(d, "mv", "fig 1.png", "figure_01.png"); _sh_git(d, "commit", "-qm", "two")
         build_crate(d, out_path=str(d / "ro-crate-metadata.json"), merge=True)
         ent = _entity(d, "figure_01.png")
         assert ent["description"] == "The setup figure"                # authored props FOLLOWED the rename
         assert "additionalType" in ent
-        assert not any(e.get("@id") == "fig.png" for e in _graph(d))   # old entity gone
+        assert not any(e.get("@id") == "fig%201.png" for e in _graph(d))   # old entity gone
         root = _entity(d, "./")
         assert {"@id": "figure_01.png"} in root["hasPart"]
         import subprocess
