@@ -79,34 +79,22 @@ jobs:
             "crate-kit @ git+https://github.com/ModelAtlasofTheEarth/crate-kit.git@v0"
           crate --version 2>/dev/null || echo "crate installed"
 
-      - name: apply issue submission (if any)
+      - name: stage issue submission (if any)
         if: ${{ inputs.issue_body != '' }}
-        shell: bash -el {0}
         env:
           ISSUE_BODY: ${{ inputs.issue_body }}    # via env, not interpolated into the script
-        run: |
-          printf '%s' "$ISSUE_BODY" > /tmp/issue.md
-          # One generic edit-entity form (target defaults to root). --print-command writes the
-          # equivalent `crate` command to stdout; the JSON result (incl. any error) goes to stderr.
-          # Record ok/fail so the comment step NEVER reports a misleading success on a no-op.
-          if crate from-issue . --body /tmp/issue.md --print-command \
-               > /tmp/crate_command.txt 2> /tmp/crate_result.json; then
-            echo ok > /tmp/apply_status
-          else
-            echo fail > /tmp/apply_status
-          fi
+        run: printf '%s' "$ISSUE_BODY" > /tmp/issue.md
 
-      - name: build + validate
+      - name: sync (apply issue → build → validate → enrich → refresh forms)
+        # THE derive pipeline is ONE engine verb (`crate sync`, tested in crate-kit) — the same
+        # call the push-retry below re-runs, so the two can't drift. An apply failure does NOT
+        # fail this step: it's recorded in sync_result.json and the comment step reports it.
         shell: bash -el {0}
         run: |
-          crate build .
-          crate validate .
-
-      - name: enrich (external PIDs + internal content; best-effort, never fails the build)
-        shell: bash -el {0}
-        run: |
-          crate enrich . || echo "external enrich skipped"
-          crate enrich --internal . || echo "internal enrich skipped"
+          ARGS=()
+          [ -s /tmp/issue.md ] && ARGS+=(--issue-body /tmp/issue.md)
+          crate sync . --forms-out .github/ISSUE_TEMPLATE \
+            --result-out /tmp/sync_result.json "${ARGS[@]}"
 
       - name: readiness → job summary (the catalogue traffic-light)
         if: ${{ !endsWith(github.repository, '-template') }}
@@ -140,15 +128,6 @@ jobs:
         shell: bash -el {0}
         run: crate render . -o _site
 
-      - name: refresh issue forms from the crate (folders / image files / per-type)
-        # One engine call regenerates every dynamic form so each picker tracks the repo: the data
-        # form's folder list, the content form's image/video files, and one "Edit a <type> entity"
-        # form per component type that opts in (`form: true`) and has entities. All "which" comes
-        # from the crate + profile — no domain logic in the workflow. Git-diff below only re-commits
-        # when something actually changed.
-        shell: bash -el {0}
-        run: crate refresh-forms --repo . --out .github/ISSUE_TEMPLATE
-
       - name: commit regenerated crate (+ refreshed form)
         shell: bash -el {0}
         run: |
@@ -163,9 +142,10 @@ jobs:
           # main can move mid-build: this run checked out github.sha, but a queued earlier build's
           # bot commit (or a user push) landed meanwhile. NEVER rebase the derived artifact — two
           # whole-file crate rewrites always conflict. Instead adopt the moved main wholesale
-          # (keeping ITS authored data, e.g. a concurrent issue apply), then RE-DERIVE on top:
-          # re-apply this run's issue (if any), rebuild, enrich, re-refresh the forms. derive+merge
-          # is idempotent, so the retry commit is correct by construction.
+          # (keeping ITS authored data, e.g. a concurrent issue apply), then RE-DERIVE on top —
+          # the SAME `crate sync` the main path ran (issue re-applied via --issue-body; skipped
+          # when /tmp/issue.md is absent/empty). derive+merge is idempotent, so the retry commit
+          # is correct by construction.
           # (No `exit` in this login shell — it doesn't exit clean; flag + break instead.)
           done_ok=""
           stage
@@ -179,11 +159,7 @@ jobs:
               echo "push rejected (attempt $attempt) — re-deriving on the moved $BR"
               git fetch origin "$BR"
               git reset --hard "origin/$BR"
-              if [ -s /tmp/issue.md ]; then crate from-issue . --body /tmp/issue.md || true; fi
-              crate build .
-              crate enrich . || true
-              crate enrich --internal . || true
-              crate refresh-forms --repo . --out .github/ISSUE_TEMPLATE || true
+              crate sync . --issue-body /tmp/issue.md --forms-out .github/ISSUE_TEMPLATE || true
               stage
               if git diff --cached --quiet; then
                 echo "moved $BR already carries this state"
@@ -202,9 +178,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          STATUS=$(cat /tmp/apply_status 2>/dev/null || echo ok)
-          if [ "$STATUS" = "fail" ]; then
-            ERR=$(python3 -c "import json,sys;print(json.load(open('/tmp/crate_result.json')).get('error','(see the Actions log)'))" 2>/dev/null || echo "(see the Actions log)")
+          # everything the comment needs is in sync_result.json's `apply` block
+          q() { python3 -c "import json;print((json.load(open('/tmp/sync_result.json')).get('apply') or {}).get('$1') or '')" 2>/dev/null || true; }
+          if [ -n "$(q error)" ]; then
+            ERR=$(q error)
             {
               echo "⚠️ **Nothing was written to the crate** — I couldn't apply this submission."
               echo ""
@@ -213,10 +190,10 @@ jobs:
               echo "Edit this issue to fix it and it'll retry automatically, or ask for help."
             } > /tmp/comment.md
           else
-            CMD=$(cat /tmp/crate_command.txt 2>/dev/null || true)
+            CMD=$(q command)
             # R4 (form grammar): the two-step is never silent — if this edit set a type whose
             # typed form exists after this build's refresh, the engine names it (next_form).
-            NEXT=$(python3 -c "import json;print(json.load(open('/tmp/crate_result.json')).get('next_form') or '')" 2>/dev/null || true)
+            NEXT=$(q next_form)
             {
               echo "✅ Applied to \`ro-crate-metadata.json\` — the single source of truth. Edit the crate (CLI / Crate-O), not this issue."
               if [ -n "$NEXT" ]; then

@@ -486,6 +486,66 @@ def test_role_typed_file_survives_rebuild_in_haspart():
         assert not any(e.get("@id") == "img/fig.png" for e in _graph(d))   # deleted: really gone
 
 
+# ── sync: THE derive pipeline as one engine verb ────────────────────────────
+
+def test_sync_runs_the_whole_pipeline():
+    from crate_kit.sync import sync
+    with repo({"figures/a.png": "x"}) as d:
+        out = d / ".github" / "ISSUE_TEMPLATE"
+        res = sync(d, forms_out=str(out))
+        assert res["ok"] is True and res["apply"] is None
+        assert res["validate"]["errors"] == []
+        assert "edit-dataset-entity.yml" in (res["forms"] or [])    # refresh-forms ran off the crate
+        body = ("### Which entity to edit\n\nfigures/a.png\n\n"
+                "### What is this file?\n\nFigure\n")
+        res2 = sync(d, issue_body=body, forms_out=None)             # same verb, issue applied first
+        assert res2["apply_ok"] is True
+        at = _entity(d, "figures/a.png")["additionalType"]
+        assert "doco/Figure" in (at if isinstance(at, str) else " ".join(at))
+
+
+def test_sync_records_apply_failure_without_aborting():
+    from crate_kit.sync import sync
+    with repo({"figures/a.png": "x"}) as d:
+        body = ("### Which entity to edit\n\nnope/missing.txt\n\n"
+                "### What is this file?\n\nFigure\n")
+        res = sync(d, issue_body=body, forms_out=None)
+        assert res["apply_ok"] is False and res["apply"].get("error")
+        assert res["ok"] is True     # the pipeline still derived; the bot comment reports the apply
+
+
+# ── one term mechanism, two bindings (§23) + edit-intent tidy ────────────────
+
+def test_tag_terms_flow_through_vocab_loader():
+    from crate_kit.vocab import load_tag_terms
+    from crate_kit.issue_form import _tag_specs
+    p = load_profile(name="mate-geoscience")
+    terms = load_tag_terms(p, "model_category")
+    assert terms["forward-model"].label == "Forward model"       # inline {id, name} → Term
+    spec = next(s for s in _tag_specs(p, "root") if s["tag_set"] == "model_category")
+    assert spec["tagmap"]["Forward model"] == "forward-model"    # the dropdown reads the SAME loader
+
+
+def test_type_switch_replaces_refinement():
+    with repo({"code/run.py": "x"}) as d:
+        edit_entity(d, "code/", type_="SoftwareApplication")
+        edit_entity(d, "code/", type_="SoftwareSourceCode")
+        t = _entity(d, "code/")["@type"]
+        t = [t] if isinstance(t, str) else t
+        assert "Dataset" in t and "SoftwareSourceCode" in t
+        assert "SoftwareApplication" not in t                    # a SWITCH, not an accretion
+
+
+def test_link_citation_engine_verb():
+    from crate_kit.contextual import link_citation
+    with repo({"figures/a.png": "x"}) as d:
+        res = link_citation(d, "./", "https://doi.org/10.5281/zenodo.123")
+        assert res["citation"] == "https://doi.org/10.5281/zenodo.123"
+        assert _entity(d, "./")["citation"]["@id"].endswith("zenodo.123")
+        assert any(e.get("@id") == res["citation"] and e.get("@type") == "ScholarlyArticle"
+                   for e in _graph(d))                            # stub minted for enrich
+
+
 # ── built-in runner (no pytest) ──────────────────────────────────────────────
 
 def _run():

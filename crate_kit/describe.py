@@ -24,20 +24,9 @@ from pathlib import Path
 
 from .build_crate import build_crate, _person
 from .profile import load_profile
-from .vocab import load_vocab
-
-ROOT = "./"
-
-
-def _resolve_id(doc, target):
-    """Map a user-supplied path to an existing entity @id (root, a dir Dataset, or a File)."""
-    if target in (".", "./", "", None):
-        return ROOT
-    ids = {e.get("@id") for e in doc["@graph"]}
-    for cand in (target, target.rstrip("/") + "/"):   # file path, or directory (trailing slash)
-        if cand in ids:
-            return cand
-    return None
+# The role verb lives in terms.py (one term-application mechanism, two bindings — §23);
+# re-exported here for its existing import sites (CLI, from_issue, tests).
+from .terms import ROOT, _add_to_list, _resolve_id, apply_role as set_role, command_for_role  # noqa: F401
 
 
 def _slug(s):
@@ -120,11 +109,16 @@ def edit_entity(repo_dir, target=".", type_=None, name=None, description=None,
     if description:
         entity["description"] = description; applied.append("description")
     if type_:
+        # A type SWITCH, not an accretion: keep the structural @type (File for files; Dataset for
+        # the root / folders — what build derives) and REPLACE any previous refinement with the
+        # new one. Without this, re-typing an entity accreted @types forever (observed in the CI
+        # smoke: a folder ended [Dataset, SoftwareApplication, SoftwareSourceCode]).
         cur = entity.get("@type", "Dataset")
         cur = [cur] if isinstance(cur, str) else list(cur)
-        if type_ not in cur:
-            cur.append(type_)
-        entity["@type"] = cur; applied.append("@type")
+        structural = [t for t in cur if t == "File" or (t == "Dataset" and (tid == ROOT or tid.endswith("/")))]
+        new = structural + ([type_] if type_ not in structural else [])
+        entity["@type"] = new[0] if len(new) == 1 else new
+        applied.append("@type")
     if authors:
         refs = [_ensure_person(doc, _person(a)) for a in authors]
         prop = "creator" if tid == ROOT else "author"   # root authorship is `creator`
@@ -148,79 +142,6 @@ def edit_entity(repo_dir, target=".", type_=None, name=None, description=None,
 # Back-compat alias: `describe` IS `edit_entity` (the CLI exposes both `describe` and `seed`).
 def describe(repo_dir, target, **kw):
     return edit_entity(repo_dir, target, **kw)
-
-
-def _add_to_list(entity, key, val):
-    cur = entity.get(key)
-    lst = cur if isinstance(cur, list) else ([cur] if cur else [])
-    if val not in lst:
-        lst.append(val)
-    entity[key] = lst[0] if len(lst) == 1 else lst
-
-
-def set_role(repo_dir, target, role, type_=None, caption=None):
-    """Tag an entity with a website ROLE (`additionalType`) — e.g. graphical-abstract.
-
-    Vocab-driven (crate_kit/vocab.py): when the role is a known term, the term decides everything —
-    its `refines` sets the structural @type (Graphical abstract ⇒ ImageObject), its `text` field
-    routes the caption text (caption | description), its `type_value` is what lands in
-    additionalType (a loadable URI like doco:Figure, else the local term name), and `single`
-    cardinality MOVES the tag off any other holder. An unknown role still works (the escape hatch):
-    it's applied verbatim, @type only if `type_` is given, text always to `caption`."""
-    repo_dir = Path(repo_dir).resolve()
-    profile = load_profile(repo_dir)
-    vocab = load_vocab(profile)
-    term = vocab.get(role)
-
-    crate_path = repo_dir / "ro-crate-metadata.json"
-    build_crate(repo_dir, out_path=str(crate_path), merge=True)
-    doc = json.loads(crate_path.read_text())
-
-    tid = _resolve_id(doc, target)
-    if tid is None:
-        return {"error": f"no entity for path '{target}' in the crate"}
-    entity = next(e for e in doc["@graph"] if e.get("@id") == tid)
-
-    # structural @type: explicit --type wins; else the term's `refines`.
-    struct_type = type_ or (term.refines if term else None)
-    if struct_type:
-        _add_to_list(entity, "@type", struct_type)
-
-    # text → the field the term carries (caption | description); default caption.
-    if caption:
-        entity[(term.text if term and term.text else "caption")] = caption
-
-    # the value that actually goes in additionalType (URI for loadable terms, else the name).
-    type_value = term.type_value if term else role
-
-    # cardinality: the term's own `single`, or (back-compat) a website slot marking this role single.
-    single = (term.single if term else False) or any(
-        s.get("role") == role and s.get("single") for s in (profile.get("website", {}) or {}).values())
-    if single:                                     # move the tag off any other holder
-        for e in doc["@graph"]:
-            if e is entity:
-                continue
-            at = e.get("additionalType")
-            if at and type_value in (at if isinstance(at, list) else [at]):
-                rest = [x for x in (at if isinstance(at, list) else [at]) if x != type_value]
-                if rest:
-                    e["additionalType"] = rest[0] if len(rest) == 1 else rest
-                else:
-                    e.pop("additionalType", None)
-    _add_to_list(entity, "additionalType", type_value)
-
-    crate_path.write_text(json.dumps(doc, indent=2))
-    return {"roled": tid, "role": role, "additionalType": type_value, "known": term is not None,
-            "single": bool(single), "type": entity.get("@type"),
-            "text_field": (term.text if term and term.text else "caption") if caption else None}
-
-
-def command_for_role(target, role, caption=None):
-    """The CLI-teaching string for a role edit — shown in the issue confirmation comment."""
-    parts = ["crate", "role", shlex.quote(target), "--as", role]
-    if caption:
-        parts += ["--caption", shlex.quote(caption)]
-    return " ".join(parts)
 
 
 def command_for(target, type_=None, name=None, description=None, authors=None, sets=None):

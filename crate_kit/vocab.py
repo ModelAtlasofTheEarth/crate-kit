@@ -78,3 +78,32 @@ def load_vocab(profile):
             t.label = ov.get("label", t.label)
             t.definition = ov.get("definition", t.definition)
     return terms
+
+
+def load_tag_terms(profile, set_name):
+    """Return {term_id: Term} for one of the profile's `tag_sets:` — TAG terms through the SAME
+    normalised Term contract as role vocabularies (§23: two bindings, one mechanism).
+
+    Sources, merged in order: a `vocab:` key naming a vendored vocabulary file (how an external /
+    minted DefinedTermSet plugs in — same file format as role vocabs), then inline `terms:`
+    ({id, name} entries, normalised to Term with label=name). `vocab_overrides:` re-skins these
+    exactly as it does role terms. Empty dict for an unknown set."""
+    tset = (profile.get("tag_sets") or {}).get(set_name) or {}
+    terms = {}
+    if tset.get("vocab"):
+        try:
+            data = _load_file(tset["vocab"])
+        except (FileNotFoundError, ModuleNotFoundError):
+            data = {}
+        for tname, raw in (data.get("terms") or {}).items():
+            terms[tname] = Term(tname, raw or {})
+    for t in (tset.get("terms") or []):
+        if isinstance(t, dict) and "id" in t:
+            terms[t["id"]] = Term(t["id"], {"label": t.get("name", t["id"]),
+                                            "definition": t.get("definition", "")})
+    for tname, ov in (profile.get("vocab_overrides") or {}).items():
+        t = terms.get(tname)
+        if t and isinstance(ov, dict):
+            t.label = ov.get("label", t.label)
+            t.definition = ov.get("definition", t.definition)
+    return terms

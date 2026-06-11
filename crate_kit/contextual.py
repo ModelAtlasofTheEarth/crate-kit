@@ -109,3 +109,23 @@ def command_for_contextual(kind, reference, name=None):
     if name:
         parts += ["--name", shlex.quote(name)]
     return " ".join(parts)
+
+
+def link_citation(repo_dir, target_id, reference):
+    """Attach a `citation` reference (a link to another work — valid on ANY entity) to the entity
+    with @id `target_id`, minting a ScholarlyArticle stub so `enrich`'s entity-based crosswalk can
+    resolve it (Crossref). The same canonical-@id path as `add_contextual`, so a paper cited from a
+    sub-entity and added as a root reference dedupe to one node. Engine-side: every surface
+    (CLI, issue form) applies citations through this, never by editing the graph inline."""
+    repo_dir = Path(repo_dir).resolve()
+    crate_path = repo_dir / "ro-crate-metadata.json"
+    doc = json.loads(crate_path.read_text())
+    entity = next((e for e in doc["@graph"] if e.get("@id") == target_id), None)
+    if entity is None:
+        return {"error": f"no entity '{target_id}' in the crate"}
+    eid = _normalize_id(reference)
+    entity["citation"] = {"@id": eid}
+    if not any(e.get("@id") == eid for e in doc["@graph"]):
+        doc["@graph"].append({"@id": eid, "@type": "ScholarlyArticle"})
+    crate_path.write_text(json.dumps(doc, indent=2))
+    return {"cited": target_id, "citation": eid}

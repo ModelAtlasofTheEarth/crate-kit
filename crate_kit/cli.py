@@ -50,6 +50,15 @@ def main(argv=None):
     tg.add_argument("--repo", default=".", help="repository directory (default: .)")
     tg.add_argument("--target", help="entity to tag (default: the set's profile target, usually root)")
 
+    sy = sub.add_parser("sync", help="THE derive pipeline: apply issue (if given) → build → validate → enrich → refresh forms")
+    sy.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
+    sy.add_argument("--issue-body", metavar="FILE",
+                    help="apply this submitted issue body first (skipped if the file is absent/empty)")
+    sy.add_argument("--forms-out", default=".github/ISSUE_TEMPLATE",
+                    help="ISSUE_TEMPLATE dir for refresh-forms (default: .github/ISSUE_TEMPLATE)")
+    sy.add_argument("--strict", action="store_true", help="strict validate (readiness gaps become errors)")
+    sy.add_argument("--result-out", metavar="FILE", help="also write the JSON result to this file (for CI)")
+
     v = sub.add_parser("validate", help="check a repo's crate against its profile (structure, required fields, readiness)")
     v.add_argument("repo", nargs="?", default=".", help="repository directory (default: .)")
     v.add_argument("--reverse-engineer", action="store_true",
@@ -241,6 +250,15 @@ def main(argv=None):
         from .tags import apply_tag
         print(json.dumps(apply_tag(args.repo, args.tag_set, args.terms, target=args.target), indent=2), file=sys.stderr)
         return 0
+
+    if args.cmd == "sync":
+        from .sync import sync_cli
+        result = sync_cli(args.repo, issue_body_path=args.issue_body, forms_out=args.forms_out,
+                          strict=args.strict, result_out=args.result_out)
+        print(json.dumps(result, indent=2), file=sys.stderr)
+        # an apply failure is reported in the result (the bot comments on it), not an exit code;
+        # build/validate failures ARE the exit code.
+        return 0 if result.get("ok") else 1
 
     if args.cmd == "validate":
         errors, warnings = validate_repo(args.repo, reverse_engineer=args.reverse_engineer,

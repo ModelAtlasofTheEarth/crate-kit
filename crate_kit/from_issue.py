@@ -9,7 +9,6 @@ is applied as a small post-pass.
 
 The issue is create/edit-time capture only; the crate is authoritative thereafter.
 """
-import json
 import re
 from pathlib import Path
 
@@ -81,6 +80,7 @@ def apply_issue(repo_dir, body, out_path=None):
             return res
         return {"applied": ["additionalType"], "edited": res.get("roled"),
                 "command": command_for_role(path, role_name, cap),
+                "next_form": _next_form(profile, res.get("type")),
                 "out": str(repo_dir / "ro-crate-metadata.json")}
 
     target, type_ = ".", None
@@ -127,20 +127,12 @@ def apply_issue(repo_dir, body, out_path=None):
     tid = result.get("edited")
     applied = list(result.get("applied", []))
 
-    # 2) citation reference (a link to another work — valid on any entity) as a small post-pass
+    # 2) citation reference (a link to another work — valid on any entity), via the engine verb
     crate_path = Path(out_path) if out_path else repo_dir / "ro-crate-metadata.json"
     if publication:
-        from .contextual import _normalize_id
-        doc = json.loads(crate_path.read_text())
-        entity = next((e for e in doc["@graph"] if e.get("@id") == tid), None)
-        if entity is not None:
-            doi_url = _normalize_id(publication)   # canonicalise → same @id as the Add-reference path
-            entity["citation"] = {"@id": doi_url}
-            # mint a stub so `enrich`'s entity-based crosswalk can resolve it (Crossref)
-            if not any(e.get("@id") == doi_url for e in doc["@graph"]):
-                doc["@graph"].append({"@id": doi_url, "@type": "ScholarlyArticle"})
+        from .contextual import link_citation
+        if not link_citation(repo_dir, tid, publication).get("error"):
             applied.append("citation")
-            crate_path.write_text(json.dumps(doc, indent=2))
 
     # tag post-pass: apply controlled tags (DefinedTerm) picked on the configure form's tag dropdowns
     if tags:

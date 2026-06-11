@@ -105,13 +105,16 @@ def _role_specs(profile, dirs=None):
 
 
 def _tag_specs(profile, target="root"):
-    """Multi-select dropdown specs for the profile's `tag_sets` that target `target`. Options are the
-    set's term names; the spec carries a name->id map so the parser can resolve picks back to ids."""
+    """Multi-select dropdown specs for the profile's `tag_sets` that target `target`. Terms come
+    through `vocab.load_tag_terms` — the SAME loader contract as role vocabularies (§23), so
+    inline terms, imported vocab files, and `vocab_overrides:` all show consistently. Options are
+    term labels; the spec carries a label->id map so the parser can resolve picks back to ids."""
+    from .vocab import load_tag_terms
     out = []
     for name, tset in (profile.get("tag_sets") or {}).items():
         if (tset.get("target") or "root") != target:
             continue
-        label_to_id = {t.get("name", t["id"]): t["id"] for t in (tset.get("terms") or []) if "id" in t}
+        label_to_id = {t.label: t.name for t in load_tag_terms(profile, name).values()}
         out.append({"id": f"tag_{name}", "role": "tag", "tag_set": name, "input": "dropdown",
                     "multiple": True, "required": False, "label": tset.get("label", name),
                     "options": list(label_to_id), "tagmap": label_to_id})
