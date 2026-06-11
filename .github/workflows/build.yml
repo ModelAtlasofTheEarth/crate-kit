@@ -154,20 +154,36 @@ jobs:
         run: |
           git config user.name  "crate-bot"
           git config user.email "crate-bot@users.noreply.github.com"
-          git add ro-crate-metadata.json
-          git add ro-crate-preview.html 2>/dev/null || true    # human-readable crate preview
-          git add .github/ISSUE_TEMPLATE 2>/dev/null || true   # incl. dynamically-named typed forms
-          if git diff --cached --quiet; then
-            echo "nothing to commit"
-          else
+          BR="${GITHUB_REF_NAME:-main}"
+          stage() {
+            git add ro-crate-metadata.json
+            git add ro-crate-preview.html 2>/dev/null || true    # human-readable crate preview
+            git add .github/ISSUE_TEMPLATE 2>/dev/null || true   # incl. dynamically-named typed forms
+          }
+          stage
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+          git commit -m "Update crate + issue form [skip ci]"
+          # main can move mid-build: this run checked out github.sha, but a queued earlier build's
+          # bot commit (or a user push) landed meanwhile. NEVER rebase the derived artifact — two
+          # whole-file crate rewrites always conflict. Instead adopt the moved main wholesale
+          # (keeping ITS authored data, e.g. a concurrent issue apply), then RE-DERIVE on top:
+          # re-apply this run's issue (if any), rebuild, enrich, re-refresh the forms. derive+merge
+          # is idempotent, so the retry commit is correct by construction.
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            echo "push rejected (attempt $attempt) — re-deriving on the moved $BR"
+            git fetch origin "$BR"
+            git reset --hard "origin/$BR"
+            if [ -s /tmp/issue.md ]; then crate from-issue . --body /tmp/issue.md || true; fi
+            crate build .
+            crate enrich . || true
+            crate enrich --internal . || true
+            crate refresh-forms --repo . --out .github/ISSUE_TEMPLATE || true
+            stage
+            if git diff --cached --quiet; then echo "moved $BR already carries this state"; exit 0; fi
             git commit -m "Update crate + issue form [skip ci]"
-            # main can move mid-build (a user push); rebase our bot commit onto it and retry.
-            # A conflict (rare: only if the moved main also rewrote the crate) fails loudly.
-            if ! git push; then
-              git pull --rebase origin "${GITHUB_REF_NAME:-main}"
-              git push
-            fi
-          fi
+          done
+          git push   # out of retries — fail loudly
 
       - name: comment on the submission issue
         # ALWAYS comment when an issue triggered this — success OR failure. Never let a submission
