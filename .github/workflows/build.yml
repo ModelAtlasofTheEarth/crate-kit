@@ -1,7 +1,7 @@
 # Reusable workflow. Model repos call it:
 #   jobs: { crate: { uses: ModelAtlasofTheEarth/crate-kit/.github/workflows/build.yml@v0 } }
-# Runs against the CALLER's checkout. The toolkit is installed by the caller's environment.yml
-# (single pinned-version source), so local and CI behave identically.
+# Runs against the CALLER's checkout. The environment comes from the caller's pixi.toml +
+# pixi.lock (single tracked manifest, same locally and in CI), so behaviour is identical.
 #
 # If `issue_body` is passed (from an `on: issues` caller), it first writes those answers into
 # the crate via `crate from-issue`; then build/validate/render run as usual.
@@ -45,7 +45,7 @@ jobs:
     # grants, or the run fails to start). Push callers grant `contents: write`; the on-issue
     # caller also grants `issues: write` for the comment step.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0        # full history -> git provenance
 
@@ -62,18 +62,17 @@ jobs:
           gh label create crate-edit --repo "${{ github.repository }}" \
             --color BFD4F2 --description "crate edit (issue forms)" --force || true
 
-      - uses: mamba-org/setup-micromamba@v2
+      - uses: prefix-dev/setup-pixi@v0.9.6
         with:
-          environment-file: environment.yml
-          cache-environment: true
+          cache: true                  # keyed on pixi.lock — exact, no stale-env guesswork
+          activate-environment: true   # env on PATH for every later step (no login-shell tricks)
 
-      - name: pin engine to current @v0 (the env cache can serve a stale crate-kit)
-        # `v0` is a MOVING tag but the micromamba cache key hashes environment.yml (which doesn't
-        # change when the tag moves) — so a cache hit restores an OLD crate-kit. Force-reinstall just
-        # the engine from the current v0 commit each run. (A lockfile/Pixi makes this unnecessary —
-        # see the Pixi to-do.) Skips on -template repos which are inert.
+      - name: ride the moving @v0 (ACTIVE repos track the engine tip; published repos freeze)
+        # pixi.lock pins the exact crate-kit commit the v0 tag pointed at when the repo locked —
+        # the RIGHT model for a published/archived model (immutable snapshot). While a repo is in
+        # active development we want engine fixes without relocking, so re-install from the
+        # CURRENT v0 each run. Freezing a repo = deleting this step. Skips -template repos (inert).
         if: ${{ !endsWith(github.repository, '-template') }}
-        shell: bash -el {0}
         run: |
           pip install --force-reinstall --no-deps --no-cache-dir \
             "crate-kit @ git+https://github.com/ModelAtlasofTheEarth/crate-kit.git@v0"
@@ -87,19 +86,16 @@ jobs:
 
       - name: sync (apply issue → build → validate → enrich → refresh forms)
         # THE derive pipeline is ONE engine verb (`crate sync`, tested in crate-kit) — the same
-        # call the push-retry below re-runs, so the two can't drift. An apply failure does NOT
+        # call the push-retry below re-runs, so the two can't drift. --issue-body is passed
+        # unconditionally (the engine skips an absent/empty file). An apply failure does NOT
         # fail this step: it's recorded in sync_result.json and the comment step reports it.
-        shell: bash -el {0}
         run: |
-          ARGS=()
-          [ -s /tmp/issue.md ] && ARGS+=(--issue-body /tmp/issue.md)
-          crate sync . --forms-out .github/ISSUE_TEMPLATE \
-            --result-out /tmp/sync_result.json "${ARGS[@]}"
+          crate sync . --issue-body /tmp/issue.md --forms-out .github/ISSUE_TEMPLATE \
+            --result-out /tmp/sync_result.json
 
       - name: readiness → job summary (the catalogue traffic-light)
         if: ${{ !endsWith(github.repository, '-template') }}
         continue-on-error: true
-        shell: bash -el {0}
         run: |
           crate readiness . --repo-url "${{ github.server_url }}/${{ github.repository }}" --markdown \
             >> "$GITHUB_STEP_SUMMARY" || true
@@ -111,7 +107,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           TITLE: ${{ inputs.status_issue_title }}
-        shell: bash -el {0}
         run: |
           crate readiness . --repo-url "$REPO_URL" --markdown > /tmp/readiness.md || exit 0
           NUM=$(gh issue list --state open --search "in:title $TITLE" --json number,title \
@@ -125,11 +120,9 @@ jobs:
 
       - name: render
         if: ${{ inputs.render }}
-        shell: bash -el {0}
         run: crate render . -o _site
 
       - name: commit regenerated crate (+ refreshed form)
-        shell: bash -el {0}
         run: |
           git config user.name  "crate-bot"
           git config user.email "crate-bot@users.noreply.github.com"
@@ -146,7 +139,7 @@ jobs:
           # the SAME `crate sync` the main path ran (issue re-applied via --issue-body; skipped
           # when /tmp/issue.md is absent/empty). derive+merge is idempotent, so the retry commit
           # is correct by construction.
-          # (No `exit` in this login shell — it doesn't exit clean; flag + break instead.)
+          # (flag + break, not `exit` — survives any shell's exit-vs-login quirks)
           done_ok=""
           stage
           if git diff --cached --quiet; then
@@ -211,7 +204,7 @@ jobs:
 
       - name: upload site artifact
         if: ${{ inputs.render }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: site
           path: _site
