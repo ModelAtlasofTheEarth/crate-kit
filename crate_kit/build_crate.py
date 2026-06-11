@@ -10,6 +10,7 @@ Authored root metadata is read, in priority order, from:
   3. (prototype convenience) `--reverse-engineer` reads `.metadata_trail/issue_dict.json`
      produced by the OLD engine, so the back-catalogue can be migrated and diffed.
 """
+import hashlib
 import json
 import os
 import re
@@ -22,7 +23,7 @@ from rocrate.model.file import File
 from rocrate.model.dataset import Dataset
 from rocrate.model.person import Person
 
-from .gitprov import git_provenance
+from .gitprov import git_provenance, renames_since
 from .ignore import IgnorePolicy
 from .payload import add_payload
 
@@ -188,33 +189,74 @@ def _walk(repo_dir, policy):
 
 
 # Root properties that are DERIVED (refreshed every build); everything else on the root is
-# authored/enriched and preserved across builds.
+# authored/enriched and preserved across builds. `_git_commit` is derived (it pins the state the
+# crate DESCRIBES — a stale pin breaks commit-pinned asset URLs and rename detection's diff base;
+# build_crate reads the OLD value before merge refreshes it).
 DERIVED_ROOT_FIELDS = {"version", "dateCreated", "dateModified", "codeRepository",
-                       "hasPart", "distribution"}
+                       "hasPart", "distribution", "_git_commit"}
 
 # File-entity properties DERIVED from the filesystem (refreshed every build); everything else
 # on a File is authored (mate describe / Crate-O) and must survive rebuilds.
-DERIVED_FILE_FIELDS = {"contentSize"}
+DERIVED_FILE_FIELDS = {"contentSize", "sha256"}
+
+
+def _sha256(path):
+    """Content checksum for the manifest — the integrity layer the archive/ingest story rests on
+    (deposit verification compares these against what arrived). Repo files are small by definition
+    (GitHub caps blobs), so hashing every manifested file is cheap."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _root_entity(doc):
     return next((e for e in doc.get("@graph", []) if e.get("@id") == "./"), {})
 
 
-def _merge(existing, fresh):
+def _is_file(e):
+    """@type-aware File test. Roles/typing make @type a LIST (["File", "ImageObject"]) — a bare
+    `== "File"` check silently mis-sorts multi-typed files (dropped from hasPart; stale entities
+    preserved after deletion/rename)."""
+    t = e.get("@type", [])
+    return "File" in ([t] if isinstance(t, str) else t)
+
+
+def _rewrite_refs(graph, mapping):
+    """Rewrite {"@id": old} references to the new id after a rename migration (pure, in place)."""
+    def fix(v):
+        if isinstance(v, dict):
+            if set(v) == {"@id"} and v["@id"] in mapping:
+                return {"@id": mapping[v["@id"]]}
+            return {k: fix(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [fix(x) for x in v]
+        return v
+    for e in graph:
+        for k in list(e):
+            if k != "@id":
+                e[k] = fix(e[k])
+
+
+def _merge(existing, fresh, renames=None):
     """Preserve authored + enriched (from `existing`); refresh the derived layer (from `fresh`).
     This is what makes the crate the editable single source of truth: a rebuild never clobbers
     a human-set or enriched value, only the file manifest / git provenance / payload.
 
     Entity handling:
     - root ("./"): merge — refresh DERIVED_ROOT_FIELDS, preserve everything else authored.
-    - File: existence follows the fresh build; DERIVED_FILE_FIELDS (contentSize) are refreshed
-      from it, but authored properties (description, additionalType, author, …) are preserved.
+    - File: existence follows the fresh build; DERIVED_FILE_FIELDS (contentSize, sha256) are
+      refreshed from it, but authored properties (description, additionalType, author, …) are
+      preserved. `renames` ({new_path: old_path}, from git) lets authored props FOLLOW a renamed
+      file instead of being silently dropped as delete+add; references elsewhere in the graph
+      (e.g. from Crate-O) are rewritten to the new @id.
     - directory Dataset (@id ends "/"): existence follows the fresh build, but the EXISTING
       entity is kept so an authored description (`mate describe`) / type survives rebuilds.
     - everything else (Person, ScholarlyArticle, ExternalPayload, descriptor): preserved.
     Existing files/dirs absent from the fresh build are dropped (they no longer exist on disk).
     """
+    renames = renames or {}
     eroot, froot = _root_entity(existing), _root_entity(fresh)
     root = dict(eroot)
     for k in DERIVED_ROOT_FIELDS:                          # refresh derived root fields
@@ -234,10 +276,11 @@ def _merge(existing, fresh):
         i = e.get("@id")
         if i in seen:
             continue
-        if e.get("@type") == "File":
-            ex = existing_by_id.get(i)
+        if _is_file(e):
+            ex = existing_by_id.get(i) or existing_by_id.get(renames.get(i))
             if ex:
                 merged = dict(ex)                          # keep authored props (+ any richer @type)
+                merged["@id"] = i                          # rename: props follow the file's new path
                 for k in DERIVED_FILE_FIELDS:              # refresh only the derived bits
                     if k in e:
                         merged[k] = e[k]
@@ -254,16 +297,22 @@ def _merge(existing, fresh):
     for src in (existing, fresh):
         for e in src.get("@graph", []):
             i = e.get("@id")
-            if i in seen or e.get("@type") == "File" or (isinstance(i, str) and i.endswith("/")):
+            if i in seen or _is_file(e) or (isinstance(i, str) and i.endswith("/")):
                 continue
             graph.append(e); seen.add(i)
+
+    # rename follow-through: anything else in the graph that referenced the OLD path (authored
+    # cross-references, Crate-O links) now points at the migrated entity's new @id.
+    moved = {old: new for new, old in renames.items() if new in seen and old not in seen}
+    if moved:
+        _rewrite_refs(graph, moved)
 
     # RO-Crate structural rule: every data entity must be linked from root.hasPart. hasPart is
     # derived (refreshed from the filesystem), so re-link ALL data entities incl. external
     # payloads here, or a rebuild orphans them (the bug ro-crate-py caught).
     root["hasPart"] = [{"@id": e["@id"]} for e in graph
                        if e.get("@id") != "./" and (
-                           e.get("@type") == "File"
+                           _is_file(e)
                            or e.get("additionalType") == "ExternalPayload"
                            or (isinstance(e.get("@id"), str) and e.get("@id").endswith("/")))]
 
@@ -305,8 +354,9 @@ def _build_fresh(repo_dir, reverse_engineer, git_opts):
             crate.add(Dataset(crate, dest_path=rel))
             n_dirs += 1
         else:
-            size = (repo_dir / rel).stat().st_size
-            crate.add(File(crate, dest_path=rel, properties={"contentSize": size}))
+            p = repo_dir / rel
+            crate.add(File(crate, dest_path=rel,
+                           properties={"contentSize": p.stat().st_size, "sha256": _sha256(p)}))
             n_files += 1
 
     doc = crate.metadata.generate()
@@ -346,8 +396,14 @@ def build_crate(repo_dir, out_path=None, reverse_engineer=False, merge=True, git
     crate_path = repo_dir / "ro-crate-metadata.json"
     if merge and not reverse_engineer and crate_path.exists():
         try:
-            doc = _merge(json.loads(crate_path.read_text()), fresh)
+            existing = json.loads(crate_path.read_text())
+            # the crate stamps the commit it last described — diff from it so authored props
+            # FOLLOW renamed files (best-effort {} on non-git / unknown commit)
+            renames = renames_since(repo_dir, _root_entity(existing).get("_git_commit"))
+            doc = _merge(existing, fresh, renames=renames)
             summary["mode"] = "merge"
+            if renames:
+                summary["renames"] = renames
         except Exception as err:
             doc, summary["mode"] = fresh, f"rebuild (merge failed: {err})"
     else:

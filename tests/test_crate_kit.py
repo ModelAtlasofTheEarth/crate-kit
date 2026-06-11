@@ -351,6 +351,64 @@ def test_build_writes_preview_html():
         assert "<html" in html.lower() and "Demo" in html      # faithful: the crate's name appears
 
 
+# ── manifest integrity + rename-aware merge (git-native enumeration, §25–26) ─
+
+def _sh_git(d, *args):
+    import subprocess
+    subprocess.run(["git", "-C", str(d), "-c", "user.email=t@test", "-c", "user.name=t", *args],
+                   check=True, capture_output=True)
+
+
+def test_manifest_carries_and_refreshes_sha256():
+    import hashlib
+    with repo({"data/a.txt": "hello"}) as d:
+        ent = _entity(d, "data/a.txt")
+        assert ent["sha256"] == hashlib.sha256(b"hello").hexdigest()
+        edit_entity(d, "data/a.txt", description="authored")          # authored layer
+        (d / "data/a.txt").write_text("changed")
+        build_crate(d, out_path=str(d / "ro-crate-metadata.json"), merge=True)
+        ent = _entity(d, "data/a.txt")
+        assert ent["sha256"] == hashlib.sha256(b"changed").hexdigest()  # derived: refreshed
+        assert ent["description"] == "authored"                          # authored: preserved
+
+
+def test_rename_preserves_authored_props_and_repins_commit():
+    d = Path(tempfile.mkdtemp())
+    try:
+        (d / "fig.png").write_text("pixels")
+        _sh_git(d, "init", "-q"); _sh_git(d, "add", "."); _sh_git(d, "commit", "-qm", "one")
+        build_crate(d, out_path=str(d / "ro-crate-metadata.json"), merge=True)
+        edit_entity(d, "fig.png", description="The setup figure")
+        set_role(d, "fig.png", "figure")                               # authored role too
+        _sh_git(d, "mv", "fig.png", "figure_01.png"); _sh_git(d, "commit", "-qm", "two")
+        build_crate(d, out_path=str(d / "ro-crate-metadata.json"), merge=True)
+        ent = _entity(d, "figure_01.png")
+        assert ent["description"] == "The setup figure"                # authored props FOLLOWED the rename
+        assert "additionalType" in ent
+        assert not any(e.get("@id") == "fig.png" for e in _graph(d))   # old entity gone
+        root = _entity(d, "./")
+        assert {"@id": "figure_01.png"} in root["hasPart"]
+        import subprocess
+        head = subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"],
+                              capture_output=True, text=True).stdout.strip()
+        assert root["_git_commit"] == head                             # pin is DERIVED: re-stamped
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_role_typed_file_survives_rebuild_in_haspart():
+    # regression: @type becomes a LIST after set_role; a bare == "File" check dropped such files
+    # from root.hasPart on the next rebuild (and preserved them as stale entities after deletion)
+    with repo({"img/fig.png": "px"}) as d:
+        set_role(d, "img/fig.png", "figure")
+        build_crate(d, out_path=str(d / "ro-crate-metadata.json"), merge=True)
+        root = _entity(d, "./")
+        assert {"@id": "img/fig.png"} in root["hasPart"]
+        (d / "img/fig.png").unlink()
+        build_crate(d, out_path=str(d / "ro-crate-metadata.json"), merge=True)
+        assert not any(e.get("@id") == "img/fig.png" for e in _graph(d))   # deleted: really gone
+
+
 # ── built-in runner (no pytest) ──────────────────────────────────────────────
 
 def _run():

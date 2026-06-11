@@ -64,3 +64,24 @@ def git_provenance(repo_dir, opts=None):
             props["codeRepository"] = remote
 
     return props
+
+
+def renames_since(repo_dir, old_commit):
+    """Map {new_path: old_path} for files git detects as RENAMED between `old_commit` and HEAD.
+
+    Feeds rename-aware merge (build_crate._merge): authored properties on a File entity follow
+    the file across a rename instead of being silently dropped as delete+add — the crate already
+    stamps the commit it last described (`_git_commit`), so the previous build is the diff base.
+    Best-effort: {} if not a git repo, the commit is unknown (e.g. force-push), or git is absent.
+    """
+    if not old_commit:
+        return {}
+    out = _git(repo_dir, "diff", "--name-status", "--find-renames", old_commit, "HEAD")
+    if not out:
+        return {}
+    renames = {}
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[0].startswith("R"):
+            renames[parts[2]] = parts[1]          # new path -> old path
+    return renames
